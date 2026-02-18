@@ -1,0 +1,34 @@
+16:08:51 - Pipeline - INFO - Checking environment...
+16:08:51 - Pipeline - INFO -   GPU: NVIDIA A100-PCIE-40GB MIG 4g.20gb (21.1 GB)
+16:08:51 - Pipeline - INFO -   GPU Memory: 21.1GB free / 21.1GB total
+16:08:59 - Pipeline - INFO -   All required packages available
+16:08:59 - Pipeline - INFO - Checking paths...
+16:08:59 - Pipeline - INFO -   LLM model: OK
+16:08:59 - Pipeline - INFO -   VLM model: OK
+16:09:00 - Pipeline - INFO -   Source data: OK
+16:09:00 - Pipeline - INFO - 
+============================================================
+16:09:00 - Pipeline - INFO - STAGE 1: DOCUMENT PREPROCESSING
+16:09:00 - Pipeline - INFO - ============================================================
+16:09:15 - Pipeline - INFO - Extracting archive: /home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_2/clients_pf_2.zip
+16:10:35 - Pipeline - INFO - === Company: ABP Acquisitions UK Limited_39306327 ===
+16:10:36 - Pipeline - INFO - Processing: Transfer Cert - fully executed CS.pdf
+16:10:50 - Pipeline - INFO - Processing: Transfer certificate - fully executed JPM.pdf
+16:11:03 - Pipeline - INFO - Processing: Cook_-_Fully_executed_SFA.pdf
+16:21:40 - Pipeline - INFO - Preprocessing complete. 3 files in manifest.
+16:21:40 - Pipeline - INFO - Unloading VLM to free GPU memory...
+16:21:41 - Pipeline - INFO - After VLM unload: GPU Memory: 0.01GB allocated, 0.02GB reserved, 21.05GB free (0.1% used)
+16:21:41 - Pipeline - INFO - 
+============================================================
+16:21:41 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION
+16:21:41 - Pipeline - INFO - ============================================================
+16:21:43 - Pipeline - INFO - Retriever type: embedding
+16:21:43 - Pipeline - INFO - Loading LLM model...
+16:21:43 - Pipeline - INFO - Loading model: /home/inghero/data/irwbds/llm/parc/qwen3_14B
+16:21:43 - Pipeline - INFO - Before model load: GPU Memory: 0.01GB allocated, 0.02GB reserved, 21.05GB free (0.1% used)
+16:21:45 - Pipeline - INFO - Loading LLM from /home/inghero/data/irwbds/llm/parc/qwen3_14B
+16:21:45 - Pipeline - INFO -   Config: 4-bit NF4, double quant, flash_attention_2, max 16.0GB
+`torch_dtype` is deprecated! Use `dtype` instead!
+16:23:45 - Pipeline - CRITICAL - Failed to load model: /layers/dap-buildpacks_pip-install/site-packages/virtual-env/lib/python3.10/site-packages/flash_attn_2_cuda.cpython-310-x86_64-linux-gnu.so: undefined symbol: _ZN3c104cuda29c10_cuda_check_implementationEiPKcS2_ib
+16:23:45 - Pipeline - ERROR - Failed to load model
+16:23:45 - Pipeline - ERROR - Extraction failed
