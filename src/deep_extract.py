@@ -226,10 +226,16 @@ def deep_extract_field(field_name: str, retriever: BM25Retriever,
     if pattern_candidates:
         prompt_context += f"\n\n[HINT: Possible values found by pattern matching: {', '.join(pattern_candidates[:5])}]"
 
+    # Token-based truncation to fit within input budget
+    max_context_tokens = 6000
+    ctx_tokens = tokenizer.encode(prompt_context, add_special_tokens=False)
+    if len(ctx_tokens) > max_context_tokens:
+        prompt_context = tokenizer.decode(ctx_tokens[:max_context_tokens], skip_special_tokens=True)
+
     prompt = SINGLE_FIELD_PROMPT.format(
         field_name=field_name,
         field_description=field_description,
-        context=prompt_context[:8000]  # Limit context size
+        context=prompt_context
     )
 
     messages = [
@@ -237,7 +243,8 @@ def deep_extract_field(field_name: str, retriever: BM25Retriever,
         {"role": "user", "content": prompt}
     ]
 
-    response = llm_generate_fn(messages, model, tokenizer, max_tokens=500)
+    response = llm_generate_fn(messages, model, tokenizer, max_tokens=500,
+                               step_name=f"deep_extract_{field_name[:40]}")
     result = parse_json_response(response)
 
     if result:
@@ -363,11 +370,17 @@ def extract_from_tables(text: str, field_name: str) -> Optional[str]:
 
 def cross_reference_fields(extractions: Dict) -> Dict:
     """
-    Check consistency between related fields.
+    Check consistency between related fields and auto-fix simple contradictions.
     E.g., if facility is syndicated, ING share should be specified.
+
+    Returns dict with:
+      - consistency_issues: list of warning strings
+      - auto_fixes: dict of field_name -> corrected value (applied in-place)
     """
     issues = []
-    
+    auto_fixes = {}
+    skip_values = {'NOT_FOUND', 'N/A', '', None, 'POSSIBLY_PRESENT', 'EXTRACTION_ERROR'}
+
     # Get all fields flat
     all_fields = {}
     for group_data in extractions.values():
@@ -377,20 +390,159 @@ def cross_reference_fields(extractions: Dict) -> Dict:
                     all_fields[fname] = fdata.get('value', '')
                 else:
                     all_fields[fname] = str(fdata)
-    
-    # Rule checks
-    if all_fields.get('Is facility syndicated?', '').lower() == 'yes':
-        if all_fields.get('ING share [%]', '') in ['NOT_FOUND', 'N/A', '']:
+
+    def _val(field_name: str) -> str:
+        """Get field value, empty string if missing/not_found."""
+        v = all_fields.get(field_name, '')
+        return '' if v in skip_values else v
+
+    def _is_yes(field_name: str) -> bool:
+        return _val(field_name).strip().lower() == 'yes'
+
+    def _is_no(field_name: str) -> bool:
+        return _val(field_name).strip().lower() == 'no'
+
+    # ─── Rule 1: Syndication ↔ ING share ───
+    if _is_yes('Is facility syndicated?'):
+        if not _val('ING share [%]'):
             issues.append("Facility is syndicated but ING share not found")
-    
-    if all_fields.get('Hedging: is the facility hedged?', '').lower() == 'yes':
+
+    # ─── Rule 2: Hedging consistency ───
+    if _is_yes('Hedging: is the facility hedged?'):
         hedging_fields = ['Hedging: how is the facility hedged', 'Hedging: notional']
-        missing_hedging = [f for f in hedging_fields if all_fields.get(f, '') in ['NOT_FOUND', 'N/A', '']]
+        missing_hedging = [f for f in hedging_fields if not _val(f)]
         if missing_hedging:
             issues.append(f"Hedging is yes but missing: {', '.join(missing_hedging)}")
-    
-    if all_fields.get('Readiness [In operation / Construction needed]', '').lower() == 'construction needed':
-        if all_fields.get('If construction needed: Readiness year', '') in ['NOT_FOUND', 'N/A', '']:
+    elif _is_no('Hedging: is the facility hedged?'):
+        # If hedging is No but hedging details are present → suspicious
+        hedging_detail_fields = [
+            'Hedging: how is the facility hedged', 'Hedging: fixed rate',
+            'Hedging: notional', 'Hedging: spread'
+        ]
+        found_details = [f for f in hedging_detail_fields if _val(f)]
+        if found_details:
+            issues.append(f"Hedging is No but found details: {', '.join(found_details)} — may need correction to Yes")
+
+    # ─── Rule 3: Construction readiness ───
+    if 'construction' in _val('Readiness [In operation / Construction needed]').lower():
+        if not _val('If construction needed: Readiness year'):
             issues.append("Construction needed but readiness year not found")
-    
-    return {"consistency_issues": issues}
+    elif 'operation' in _val('Readiness [In operation / Construction needed]').lower():
+        # In operation → construction fields should be NOT_FOUND, not filled
+        if _val('If construction needed: Readiness year'):
+            issues.append("In operation but construction readiness year is filled — likely incorrect")
+
+    # ─── Rule 4: Covenants Yes/No ↔ covenant details ───
+    if _is_yes('If covenants specified?'):
+        # At least one ratio should be present
+        ratio_fields = [
+            'Covenant leading to dividend lock-up: Backward-looking DSCR (B-DSCR)',
+            'Covenant leading to dividend lock-up: Forward-looking DSCR (F-DSCR)',
+            'Covenant leading to dividend lock-up: Loan Life Coverage Ratio (LLCR)',
+            'Covenant leading to dividend lock-up: Interest Coverage Ratio (ICR)',
+            'Covenant leading to dividend lock-up: Net Debt / EBITDA',
+        ]
+        found_ratios = [f for f in ratio_fields if _val(f)]
+        if not found_ratios:
+            issues.append("Covenants=Yes but no specific covenant ratios found")
+    elif _is_no('If covenants specified?'):
+        # If No but ratios found → auto-fix to Yes
+        ratio_fields = [
+            'Covenant leading to dividend lock-up: Backward-looking DSCR (B-DSCR)',
+            'Covenant leading to dividend lock-up: Forward-looking DSCR (F-DSCR)',
+            'Covenant leading to dividend lock-up: Loan Life Coverage Ratio (LLCR)',
+            'Covenant leading to dividend lock-up: Interest Coverage Ratio (ICR)',
+        ]
+        found_ratios = [f for f in ratio_fields if _val(f)]
+        if found_ratios:
+            issues.append(f"Covenants=No but found ratios: {found_ratios[0]} — auto-fixing to Yes")
+            auto_fixes['If covenants specified?'] = 'Yes'
+
+    # ─── Rule 5: D&C Contractor consistency ───
+    if _is_yes('If D&C Contractor specified?'):
+        if not _val('Name of the D&C Contractor'):
+            issues.append("D&C Contractor=Yes but name not found")
+    elif _is_no('If D&C Contractor specified?'):
+        if _val('Name of the D&C Contractor'):
+            issues.append("D&C Contractor=No but contractor name is filled — auto-fixing to Yes")
+            auto_fixes['If D&C Contractor specified?'] = 'Yes'
+
+    # ─── Rule 6: Completion guarantee consistency ───
+    if _is_yes('If completion guarantees specified?'):
+        if not _val('Guarantee Development sponsors name'):
+            issues.append("Completion guarantees=Yes but guarantor name not found")
+    elif _is_no('If completion guarantees specified?'):
+        if _val('Guarantee Development sponsors name'):
+            issues.append("Completion guarantees=No but guarantor name is filled — auto-fixing to Yes")
+            auto_fixes['If completion guarantees specified?'] = 'Yes'
+
+    # ─── Rule 7: Revenue mitigating factors consistency ───
+    if _is_yes('If revenue mitigating factors specified?'):
+        if not _val('Type of mitigating factor'):
+            issues.append("Revenue mitigating factors=Yes but type not found")
+    elif _is_no('If revenue mitigating factors specified?'):
+        if _val('Type of mitigating factor') or _val('Contractual or regulatory factor guarantor'):
+            issues.append("Revenue mitigating=No but details found — auto-fixing to Yes")
+            auto_fixes['If revenue mitigating factors specified?'] = 'Yes'
+
+    # ─── Rule 8: Sponsor consistency ───
+    if _is_yes('Is a Sponsor linked to the project?'):
+        if not _val('Sponsor Name'):
+            issues.append("Sponsor=Yes but sponsor name not found")
+    elif _is_no('Is a Sponsor linked to the project?'):
+        if _val('Sponsor Name'):
+            issues.append("Sponsor=No but sponsor name found — auto-fixing to Yes")
+            auto_fixes['Is a Sponsor linked to the project?'] = 'Yes'
+
+    # ─── Rule 9: HoldCo consistency ───
+    if _is_yes('Is a HoldCo linked to the project?'):
+        if not _val('Name of the HoldCo linked to the project'):
+            issues.append("HoldCo=Yes but HoldCo name not found")
+    elif _is_no('Is a HoldCo linked to the project?'):
+        if _val('Name of the HoldCo linked to the project'):
+            issues.append("HoldCo=No but HoldCo name found — auto-fixing to Yes")
+            auto_fixes['Is a HoldCo linked to the project?'] = 'Yes'
+
+    # ─── Rule 10: Cash sweep consistency ───
+    if _is_yes('Is there a cash sweep mechanism applicable to the facility?'):
+        if not _val('Cash sweep structure'):
+            issues.append("Cash sweep=Yes but structure not found")
+    elif _is_no('Is there a cash sweep mechanism applicable to the facility?'):
+        if _val('Cash sweep structure'):
+            issues.append("Cash sweep=No but structure found — auto-fixing to Yes")
+            auto_fixes['Is there a cash sweep mechanism applicable to the facility?'] = 'Yes'
+
+    # ─── Rule 11: Interest rate type consistency ───
+    base_rate = _val('Base Rate of the facility')
+    fix_rate = _val('Fix interest rate [%]')
+    spread = _val('Spread [%]')
+    if base_rate and fix_rate:
+        issues.append(f"Both base rate ({base_rate}) and fixed rate ({fix_rate}) found — usually only one applies")
+    if base_rate and not spread:
+        issues.append("Base rate found but spread is missing — floating rate usually has a spread/margin")
+
+    # ─── Rule 12: Date sanity ───
+    inception = _val('Inception date [MM/YYYY] of the facility')
+    maturity = _val('Maturity date [MM/YYYY] of the facility')
+    if inception and maturity:
+        # Simple year check
+        inc_year = re.search(r'(\d{4})', inception)
+        mat_year = re.search(r'(\d{4})', maturity)
+        if inc_year and mat_year:
+            if int(mat_year.group(1)) < int(inc_year.group(1)):
+                issues.append(f"Maturity ({maturity}) is before inception ({inception}) — dates may be swapped")
+
+    # ─── Apply auto-fixes to extractions ───
+    if auto_fixes:
+        for group_data in extractions.values():
+            if 'fields' not in group_data:
+                continue
+            for fname, fdata in group_data['fields'].items():
+                if fname in auto_fixes and isinstance(fdata, dict):
+                    old_val = fdata.get('value', '')
+                    fdata['value'] = auto_fixes[fname]
+                    fdata['evidence'] = fdata.get('evidence', '') + f" [AUTO-FIXED from {old_val}]"
+                    fdata['confidence'] = 'MEDIUM'
+                    logger.info(f"    Auto-fixed: {fname}: {old_val} → {auto_fixes[fname]}")
+
+    return {"consistency_issues": issues, "auto_fixes": auto_fixes}

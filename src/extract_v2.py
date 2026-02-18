@@ -71,6 +71,61 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# =====================================================================
+# DEBUG TRACE — saves every LLM call's input/output for inspection
+# =====================================================================
+import time as _time
+
+DEBUG_TRACE_DIR = os.path.join(EXTRACTION_DIR, "debug_traces")
+_trace_counter = 0
+
+
+def _save_debug_trace(step_name: str, messages: list, response: str,
+                      input_tokens: int, elapsed_sec: float,
+                      parsed_result=None, company: str = ""):
+    """Save a single LLM call's full prompt + response for debugging."""
+    global _trace_counter
+    _trace_counter += 1
+
+    # Create per-company subfolder
+    safe_company = re.sub(r'[^a-zA-Z0-9_-]', '_', company) if company else "unknown"
+    trace_dir = os.path.join(DEBUG_TRACE_DIR, safe_company)
+    os.makedirs(trace_dir, exist_ok=True)
+
+    trace = {
+        "call_number": _trace_counter,
+        "step": step_name,
+        "company": company,
+        "timestamp": datetime.now().isoformat(),
+        "input_tokens": input_tokens,
+        "elapsed_seconds": round(elapsed_sec, 2),
+        "tokens_per_second": round(len(response.split()) / max(elapsed_sec, 0.01), 1),
+        "messages": [
+            {"role": m["role"], "content": m["content"]} for m in messages
+        ],
+        "raw_response": response,
+        "parsed_ok": parsed_result is not None,
+        "parsed_result": parsed_result,
+    }
+
+    filename = f"{_trace_counter:04d}_{step_name}.json"
+    filepath = os.path.join(trace_dir, filename)
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(trace, f, indent=2, ensure_ascii=False, default=str)
+    except Exception as e:
+        logger.warning(f"Failed to save debug trace: {e}")
+
+
+# Current company context for debug traces (set by processing functions)
+_current_company = ""
+
+
+def set_debug_company(company: str):
+    """Set current company for debug trace file organization."""
+    global _current_company
+    _current_company = company
+
 
 # =====================================================================
 # DATA STRUCTURES
@@ -165,8 +220,14 @@ def initialize_model(model_path: str, use_flash_attention: bool = False):
 
 
 def llm_generate(prompt_messages: List[Dict], model, tokenizer,
-                 max_tokens: int = MAX_NEW_TOKENS) -> str:
-    """Generate LLM response with memory-efficient settings."""
+                 max_tokens: int = MAX_NEW_TOKENS,
+                 step_name: str = "llm_call") -> str:
+    """Generate LLM response with memory-efficient settings.
+
+    Args:
+        step_name: Label for debug trace (e.g. "facility_detection", "extract_pricing").
+    """
+    t0 = _time.time()
     try:
         text = tokenizer.apply_chat_template(
             prompt_messages,
@@ -218,6 +279,14 @@ def llm_generate(prompt_messages: List[Dict], model, tokenizer,
         del inputs, outputs
         torch.cuda.empty_cache()
 
+        # Save debug trace
+        elapsed = _time.time() - t0
+        _save_debug_trace(
+            step_name=step_name, messages=prompt_messages,
+            response=response, input_tokens=input_len,
+            elapsed_sec=elapsed, company=_current_company
+        )
+
         return response
     except Exception as e:
         # Catch ALL errors including NVML assertion failures (not just torch.cuda.OutOfMemoryError)
@@ -263,14 +332,14 @@ def parse_json_response(response: str) -> Optional[Dict]:
         return json.loads(response)
     except json.JSONDecodeError:
         pass
-    
+
     # Try to find JSON block in response
     patterns = [
         r'```json\s*([\s\S]*?)\s*```',
         r'```\s*([\s\S]*?)\s*```',
         r'\{[\s\S]*\}'
     ]
-    
+
     for pattern in patterns:
         matches = re.findall(pattern, response)
         for match in matches:
@@ -282,9 +351,51 @@ def parse_json_response(response: str) -> Optional[Dict]:
                 return json.loads(json_str)
             except json.JSONDecodeError:
                 continue
-    
+
     logger.warning("Failed to parse JSON from response")
     return None
+
+
+def validate_extraction_schema(result: Dict, expected_fields: List[str]) -> Tuple[bool, List[str]]:
+    """
+    Validate that an extraction result has the expected JSON schema.
+
+    Returns:
+        (is_valid, list_of_issues)
+    """
+    issues = []
+
+    if not isinstance(result, dict):
+        return False, ["Result is not a dict"]
+
+    if "fields" not in result:
+        issues.append("Missing 'fields' key")
+        return False, issues
+
+    fields = result["fields"]
+    if not isinstance(fields, dict):
+        issues.append("'fields' is not a dict")
+        return False, issues
+
+    # Check each expected field is present with valid structure
+    for field_name in expected_fields:
+        if field_name not in fields:
+            issues.append(f"Missing field: {field_name}")
+            continue
+
+        field_data = fields[field_name]
+        if not isinstance(field_data, dict):
+            issues.append(f"Field '{field_name}' is not a dict (got {type(field_data).__name__})")
+            continue
+
+        if "value" not in field_data:
+            issues.append(f"Field '{field_name}' missing 'value' key")
+
+        if "confidence" not in field_data:
+            issues.append(f"Field '{field_name}' missing 'confidence' key")
+
+    is_valid = len(issues) == 0
+    return is_valid, issues
 
 
 # =====================================================================
@@ -297,33 +408,55 @@ def detect_facilities(document_text: str, model, tokenizer,
     First pass: Detect all distinct facilities/tranches in the document.
     This helps us know if we need per-facility extraction.
 
-    Enhanced with multi-section sampling: instead of only reading the
-    first 15k chars, we also pull relevant sections from schedules
-    and appendices using BM25 retrieval (CPU-only).
+    Uses targeted BM25 retrieval with multiple queries to gather all
+    facility-related sections, not just the document beginning.
     """
-    # Start with the beginning of the document (usually has facility overview)
-    text_parts = [document_text[:10000]]
+    text_parts = []
+    seen_prefixes = set()
 
-    # Use BM25 to find sections mentioning facilities/tranches/schedules
+    def _add_part(text: str):
+        """Add text part, avoiding near-duplicates."""
+        prefix = text[:200].strip()
+        if prefix not in seen_prefixes:
+            seen_prefixes.add(prefix)
+            text_parts.append(text)
+
+    # 1. Beginning of document (cover page, table of contents, initial definitions)
+    _add_part(document_text[:8000])
+
+    # 2. Targeted BM25 retrieval with multiple specific queries
     if retriever:
-        facility_keywords = (
-            "facility tranche schedule term loan revolving RCF "
-            "letter of credit commitment amount aggregate"
-        )
-        bm25_results = retriever.search(facility_keywords, top_k=5)
-        for _, _, chunk_text in bm25_results:
-            # Avoid duplicating content from the beginning
-            if chunk_text[:200] not in document_text[:10000]:
-                text_parts.append(chunk_text)
+        targeted_queries = [
+            # The clause that enumerates all facilities
+            "The Facilities make available term loan revolving credit facility aggregate amount",
+            # Commitment amounts per facility
+            "Total Commitments Total Facility Commitments aggregate being",
+            # Facility definitions with types and amounts
+            "facility tranche commitment amount schedule limit",
+            # Final maturity / tenor section (often lists per-facility terms)
+            "Final Maturity Date years from Escrow Delivery",
+            # Margin / pricing section (lists per-facility rates)
+            "Margin per cent per annum Facility Loan",
+        ]
+        for query in targeted_queries:
+            bm25_results = retriever.search(query, top_k=3)
+            for _, _, chunk_text in bm25_results:
+                _add_part(chunk_text)
 
-    # Also grab from the end of the document (schedules are often at the end)
+    # 3. End of document (schedules with lender commitments)
     if len(document_text) > 20000:
-        text_parts.append(document_text[-5000:])
+        _add_part(document_text[-5000:])
 
-    # Combine, keeping within ~15k char budget for the LLM
+    # Combine and tokenize to enforce a token budget (not char budget)
     combined = "\n\n---\n\n".join(text_parts)
-    if len(combined) > 15000:
-        combined = combined[:15000]
+
+    # Use token-based truncation: ~5K tokens for document leaves room
+    # for the prompt template + system prompt within 8K input limit
+    max_detect_tokens = 5000
+    doc_tokens = tokenizer.encode(combined, add_special_tokens=False)
+    if len(doc_tokens) > max_detect_tokens:
+        logger.info(f"      Facility detection: trimming from {len(doc_tokens)} to {max_detect_tokens} tokens")
+        combined = tokenizer.decode(doc_tokens[:max_detect_tokens], skip_special_tokens=True)
 
     prompt = FACILITY_DETECTION_PROMPT.format(document_text=combined)
 
@@ -332,8 +465,13 @@ def detect_facilities(document_text: str, model, tokenizer,
         {"role": "user", "content": prompt}
     ]
 
-    response = llm_generate(messages, model, tokenizer, max_tokens=2048)
+    response = llm_generate(messages, model, tokenizer, max_tokens=2048,
+                            step_name="facility_detection")
     result = parse_json_response(response)
+
+    # Save parsed result to debug trace
+    _save_debug_trace("facility_detection_parsed", messages, response,
+                      0, 0, parsed_result=result, company=_current_company)
 
     if result and 'facilities' in result:
         logger.info(f"Detected {result.get('total_facilities', 0)} facilities")
@@ -405,17 +543,64 @@ def extract_field_group(group_name: str, group_config: Dict,
     # Use adaptive max_new_tokens per field group to save KV cache memory
     group_max_tokens = FIELD_GROUP_MAX_TOKENS.get(group_name, MAX_NEW_TOKENS)
 
-    response = llm_generate(messages, model, tokenizer, max_tokens=group_max_tokens)
+    # Expected field names for schema validation
+    expected_field_names = [name for name, _ in fields]
+
+    # Attempt 1: normal generation
+    response = llm_generate(messages, model, tokenizer, max_tokens=group_max_tokens,
+                            step_name=f"extract_{group_name}")
     result = parse_json_response(response)
 
     if result:
-        return result
+        is_valid, issues = validate_extraction_schema(result, expected_field_names)
+        if is_valid:
+            return result
+        else:
+            logger.warning(f"      Schema validation issues: {issues[:3]}...")  # Show first 3
+            # Try to fix: if 'fields' key exists but some fields missing,
+            # fill them with NOT_FOUND rather than retrying
+            if "fields" in result and isinstance(result["fields"], dict):
+                for field_name in expected_field_names:
+                    if field_name not in result["fields"]:
+                        result["fields"][field_name] = {
+                            "value": "NOT_FOUND",
+                            "evidence": "",
+                            "confidence": "LOW"
+                        }
+                    elif not isinstance(result["fields"][field_name], dict):
+                        # Field exists but wrong type — wrap it
+                        raw_val = result["fields"][field_name]
+                        result["fields"][field_name] = {
+                            "value": str(raw_val),
+                            "evidence": "",
+                            "confidence": "LOW"
+                        }
+                return result
 
-    # Return empty structure if parsing failed
+    # Attempt 2: retry with explicit JSON repair instruction
+    logger.info(f"      Retrying extraction for {group_name} (JSON parse/validation failed)")
+    retry_messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt + "\n\nIMPORTANT: Your response MUST be valid JSON only. No text before or after the JSON object."}
+    ]
+    response2 = llm_generate(retry_messages, model, tokenizer, max_tokens=group_max_tokens,
+                             step_name=f"extract_{group_name}_retry")
+    result2 = parse_json_response(response2)
+
+    if result2 and "fields" in result2:
+        # Patch missing fields
+        for field_name in expected_field_names:
+            if field_name not in result2.get("fields", {}):
+                result2.setdefault("fields", {})[field_name] = {
+                    "value": "NOT_FOUND", "evidence": "", "confidence": "LOW"
+                }
+        return result2
+
+    # All attempts failed — return error structure
     return {
         "fields": {name: {"value": "EXTRACTION_ERROR", "evidence": "", "confidence": "LOW"}
                   for name, _ in fields},
-        "notes": "Failed to parse extraction response"
+        "notes": "Failed to parse extraction response after retry"
     }
 
 
@@ -464,27 +649,55 @@ def extract_all_field_groups(retriever: BM25Retriever,
 # VERIFICATION PASS
 # =====================================================================
 
-def verify_extraction(extractions: Dict, document_sample: str, 
-                     model, tokenizer) -> Dict:
+def verify_extraction(extractions: Dict, document_sample: str,
+                     model, tokenizer,
+                     retriever: BM25Retriever = None) -> Dict:
     """
     Verification pass: Check extracted values against source.
-    Focus on high-value fields that are commonly wrong.
+    Uses retriever to pull relevant context for the extracted values,
+    instead of just the document beginning.
     """
     # Collect all extracted values
     extracted_summary = []
+    verification_keywords = []
     for group_name, group_data in extractions.items():
         if 'fields' not in group_data:
             continue
         for field_name, field_data in group_data['fields'].items():
             if isinstance(field_data, dict):
                 value = field_data.get('value', 'N/A')
-                extracted_summary.append(f"- {field_name}: {value}")
-    
+                if value not in ('NOT_FOUND', 'N/A', '', 'EXTRACTION_ERROR', 'POSSIBLY_PRESENT'):
+                    extracted_summary.append(f"- {field_name}: {value}")
+                    # Collect keywords from values for retrieval
+                    verification_keywords.append(f"{field_name} {value}")
+
     extracted_data = '\n'.join(extracted_summary)
-    
+
+    # Build verification context using retriever instead of blind truncation
+    if retriever and verification_keywords:
+        context_parts = []
+        seen = set()
+        # Retrieve chunks relevant to the extracted values
+        for kw in verification_keywords[:8]:  # Limit queries
+            results = retriever.search(kw, top_k=2)
+            for _, _, chunk_text in results:
+                prefix = chunk_text[:200]
+                if prefix not in seen:
+                    seen.add(prefix)
+                    context_parts.append(chunk_text)
+        verification_context = '\n\n---\n\n'.join(context_parts[:6])
+    else:
+        verification_context = document_sample[:5000]
+
+    # Token-truncate the context to fit within input budget
+    max_verify_tokens = 4000
+    ctx_tokens = tokenizer.encode(verification_context, add_special_tokens=False)
+    if len(ctx_tokens) > max_verify_tokens:
+        verification_context = tokenizer.decode(ctx_tokens[:max_verify_tokens], skip_special_tokens=True)
+
     prompt = VERIFICATION_PROMPT.format(
         extracted_data=extracted_data,
-        document_text=document_sample[:5000]  # ~5K chars ≈ ~1.5K tokens
+        document_text=verification_context
     )
 
     messages = [
@@ -492,7 +705,8 @@ def verify_extraction(extractions: Dict, document_sample: str,
         {"role": "user", "content": prompt}
     ]
 
-    response = llm_generate(messages, model, tokenizer, max_tokens=1024)
+    response = llm_generate(messages, model, tokenizer, max_tokens=1024,
+                            step_name="verification")
     return parse_json_response(response) or {}
 
 
@@ -581,6 +795,7 @@ def process_document(company: str, manifest_entry: Dict,
                     embedding_model=None,
                     embedding_tokenizer=None) -> Optional[DocumentExtraction]:
     """Process a single document through the full extraction pipeline."""
+    set_debug_company(company)
 
     # Load chunks
     chunks_file = os.path.join(CHUNKS_DIR, manifest_entry['chunks_file'])
@@ -607,12 +822,12 @@ def process_document(company: str, manifest_entry: Dict,
         embedding_tokenizer=embedding_tokenizer
     )
     
-    # Step 1: Detect facilities
+    # Step 1: Detect facilities (pass retriever for targeted section retrieval)
     logger.info("  Step 1: Detecting facilities...")
-    facilities = detect_facilities(full_text, model, tokenizer)
-    
+    facilities = detect_facilities(full_text, model, tokenizer, retriever=retriever)
+
     extracted_facilities = []
-    
+
     # Step 2: Extract for each facility
     for i, facility_info in enumerate(facilities):
         facility_context = f"{facility_info.get('name', 'Facility')} ({facility_info.get('type', 'Unknown type')})"
@@ -621,11 +836,11 @@ def process_document(company: str, manifest_entry: Dict,
         # Multi-pass extraction
         extractions = extract_all_field_groups(retriever, facility_context, model, tokenizer)
         
-        # Step 3: Verification (sample-based for speed)
+        # Step 3: Verification (retriever-based for relevant context)
         logger.info(f"  Step 3.{i+1}: Verifying extraction...")
-        verification = verify_extraction(extractions, full_text, model, tokenizer)
+        verification = verify_extraction(extractions, full_text, model, tokenizer, retriever=retriever)
         extractions = apply_corrections(extractions, verification)
-        
+
         # Consolidate
         facility_data = consolidate_facility_data(extractions, facility_info)
         extracted_facilities.append(facility_data)
@@ -832,6 +1047,7 @@ def process_company_consolidated(
     2. ALL text is processed by the LLM
     3. Related information across files is connected
     """
+    set_debug_company(company)
 
     # Step 1: Consolidate all files for this company
     logger.info(f"  Step 1: Consolidating all files...")
@@ -859,10 +1075,10 @@ def process_company_consolidated(
     
     # Step 3: Detect facilities from the combined document
     logger.info(f"  Step 2: Detecting facilities...")
-    
-    # Use beginning of document which typically has facility overview
-    sample_text = consolidated.full_text[:20000]
-    facilities = detect_facilities(sample_text, model, tokenizer, retriever=retriever)
+
+    # Pass full text — detect_facilities uses targeted BM25 retrieval
+    # to find facility-related sections, then token-truncates internally
+    facilities = detect_facilities(consolidated.full_text, model, tokenizer, retriever=retriever)
     
     logger.info(f"  Found {len(facilities)} facilities")
     
@@ -878,9 +1094,9 @@ def process_company_consolidated(
             consolidated, retriever, facility_context, model, tokenizer
         )
         
-        # Verification pass
+        # Verification pass (retriever-based for relevant context)
         logger.info(f"  Step 4.{i+1}: Verifying extraction...")
-        verification = verify_extraction(all_extractions, sample_text, model, tokenizer)
+        verification = verify_extraction(all_extractions, consolidated.full_text, model, tokenizer, retriever=retriever)
         all_extractions = apply_corrections(all_extractions, verification)
         
         # Consolidate facility data
@@ -959,6 +1175,13 @@ def extract_with_full_coverage(
         # Strategy 2: Process document in sections for full coverage (skip if all found)
         # Each section pass sends MAX_CHUNKS_PER_FIELD_GROUP chunks to stay within VRAM
         if not all_found:
+            # Track which chunks were already covered by BM25 retrieval
+            bm25_chunk_texts = set()
+            if relevant_chunks:
+                for rc in relevant_chunks:
+                    # Use first 300 chars as fingerprint (enough to uniquely ID a chunk)
+                    bm25_chunk_texts.add(rc[:300])
+
             chunk_limit = MAX_CHUNKS_PER_FIELD_GROUP
 
             for section_start in range(0, len(consolidated.chunks), chunk_limit):
@@ -966,18 +1189,19 @@ def extract_with_full_coverage(
                 section_chunks = [c['text'] for c in consolidated.chunks[section_start:section_end]]
 
                 if section_chunks:
-                    # Check if this section content is already covered by BM25 pass
-                    section_preview = ' '.join(section_chunks)[:300]
-                    already_covered = any(
-                        section_preview[:100] in rc for rc in relevant_chunks
-                    ) if relevant_chunks else False
+                    # Check overlap: skip if ALL chunks in this section were in BM25 results
+                    covered_count = sum(
+                        1 for sc in section_chunks
+                        if sc[:300] in bm25_chunk_texts
+                    )
+                    if covered_count == len(section_chunks):
+                        continue  # Fully covered by BM25 pass
 
-                    if not already_covered:
-                        result = extract_field_group(
-                            group_name, group_config, section_chunks,
-                            facility_context, model, tokenizer
-                        )
-                        extraction_results.append(result)
+                    result = extract_field_group(
+                        group_name, group_config, section_chunks,
+                        facility_context, model, tokenizer
+                    )
+                    extraction_results.append(result)
         
         # Merge results from all passes
         if extraction_results:

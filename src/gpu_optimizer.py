@@ -392,9 +392,8 @@ def get_optimized_generation_config(model_config, available_memory_gb: float) ->
     Get optimized generation configuration based on model and available memory.
     """
     config = {
-        "do_sample": True,
-        "temperature": 0.1,
-        "top_p": 0.95,
+        "do_sample": False,         # Greedy — deterministic extraction
+        "temperature": 1.0,         # Ignored when do_sample=False
         "repetition_penalty": 1.1,
     }
     
@@ -865,14 +864,18 @@ class OptimizedPipeline:
 # =====================================================================
 
 def get_memory_efficient_generation_kwargs() -> Dict:
-    """Get kwargs optimized for memory-efficient generation."""
+    """Get kwargs optimized for memory-efficient generation.
+
+    Uses greedy decoding (temperature=0, do_sample=False) for
+    deterministic, reproducible extraction results.  Sampling adds
+    randomness that hurts structured JSON extraction accuracy.
+    """
     return {
-        "do_sample": True,
-        "temperature": 0.1,
-        "top_p": 0.95,
+        "do_sample": False,       # Greedy — deterministic output
+        "temperature": 1.0,       # Ignored when do_sample=False, but must be >0 to avoid warnings
         "repetition_penalty": 1.1,
-        "use_cache": True,  # KV cache
-        "num_beams": 1,  # No beam search (saves memory)
+        "use_cache": True,        # KV cache
+        "num_beams": 1,           # No beam search (saves memory)
         "early_stopping": False,
     }
 

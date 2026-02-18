@@ -175,15 +175,13 @@ FIELD_GROUP_EXAMPLES: Dict[str, Dict] = {
         },
     },
 
-    "covenants": {
+    "covenants_general": {
         "input_summary": (
             "Financial covenants:\n"
             "- Historical DSCR: minimum 1.15:1 tested semi-annually\n"
-            "- Projected DSCR: minimum 1.10x\n"
-            "- LLCR: minimum 1.20:1\n"
-            "- Net Debt / EBITDA: maximum 6.0x\n"
+            "- Dividend lock-up if B-DSCR < 1.20:1.\n"
             "A DSRA of 6 months debt service is required.\n"
-            "Dividend lock-up if B-DSCR < 1.20:1."
+            "Minimum cash balance: EUR 5,000,000."
         ),
         "output": {
             "If DSRA (Debt Service Reserve Account) specified?": {
@@ -196,6 +194,29 @@ FIELD_GROUP_EXAMPLES: Dict[str, Dict] = {
                 "evidence": "Financial covenants: Historical DSCR: minimum 1.15:1",
                 "confidence": "HIGH"
             },
+            "Covenant leading to dividend lock-up: Minimum cash, '000": {
+                "value": "EUR 5,000",
+                "evidence": "Minimum cash balance: EUR 5,000,000",
+                "confidence": "HIGH"
+            },
+            "Covenant leading to dividend lock-up: Minimum Equity Reserve Account, '000": {
+                "value": "NOT_FOUND",
+                "evidence": "",
+                "confidence": "LOW"
+            },
+        },
+    },
+
+    "covenants_ratios": {
+        "input_summary": (
+            "Financial covenants:\n"
+            "- Historical DSCR: minimum 1.15:1 tested semi-annually\n"
+            "- Projected DSCR: minimum 1.10x\n"
+            "- LLCR: minimum 1.20:1\n"
+            "- Net Debt / EBITDA: maximum 6.0x\n"
+            "Dividend lock-up if B-DSCR < 1.20:1."
+        ),
+        "output": {
             "Covenant leading to dividend lock-up: Backward-looking DSCR (B-DSCR)": {
                 "value": "1.20x",
                 "evidence": "Dividend lock-up if B-DSCR < 1.20:1",

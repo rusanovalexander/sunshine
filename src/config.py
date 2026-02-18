@@ -118,13 +118,22 @@ FIELD_GROUPS = {
                      "regulated", "price", "volume", "contract", "off-taker"]
     },
     
-    "covenants": {
-        "name": "Financial Covenants",
+    "covenants_general": {
+        "name": "Financial Covenants - General & Reserve",
         "fields": [
             ("If DSRA (Debt Service Reserve Account) specified?", "Yes/No"),
             ("If covenants specified?", "Yes/No"),
             ("Covenant leading to dividend lock-up: Minimum cash, '000", "Minimum cash covenant"),
             ("Covenant leading to dividend lock-up: Minimum Equity Reserve Account, '000", "Min equity reserve"),
+        ],
+        "keywords": ["covenant", "DSRA", "debt service reserve", "reserve account",
+                     "lock-up", "dividend", "minimum cash", "equity reserve",
+                     "distribution", "stopper", "restriction"]
+    },
+
+    "covenants_ratios": {
+        "name": "Financial Covenants - Coverage & Leverage Ratios",
+        "fields": [
             ("Covenant leading to dividend lock-up: Backward-looking DSCR (B-DSCR)", "Historical DSCR ratio"),
             ("Covenant leading to dividend lock-up: Forward-looking DSCR (F-DSCR)", "Projected DSCR ratio"),
             ("Covenant leading to dividend lock-up: Loan Life Coverage Ratio (LLCR)", "LLCR covenant"),
@@ -134,8 +143,9 @@ FIELD_GROUPS = {
             ("Covenant leading to dividend lock-up: Net Debt / RAB", "Regulatory asset base ratio"),
             ("Covenant leading to dividend lock-up: Debt / Equity", "D/E ratio"),
         ],
-        "keywords": ["covenant", "DSCR", "LLCR", "ICR", "EBITDA", "coverage", "ratio",
-                     "lock-up", "dividend", "reserve", "debt service", "minimum"]
+        "keywords": ["DSCR", "LLCR", "ICR", "EBITDA", "coverage ratio", "leverage",
+                     "lock-up", "dividend", "debt service coverage", "loan life",
+                     "interest cover", "gearing", "debt equity"]
     },
     
     "syndication_ing": {
@@ -310,13 +320,14 @@ FIELD_GROUP_MAX_TOKENS = {
     "project_details": 768,
     "construction_guarantees": 768,
     "revenue_mitigants": 1024,
-    "covenants": 1536,       # 12 fields, many sub-values
-    "syndication_ing": 512,  # 3 simple fields
-    "dates_schedules": 1024, # schedules can be verbose
+    "covenants_general": 768,   # 4 fields (DSRA, covenants Y/N, min cash, equity reserve)
+    "covenants_ratios": 1024,   # 8 ratio fields (DSCR, LLCR, ICR, etc.)
+    "syndication_ing": 512,     # 3 simple fields
+    "dates_schedules": 1024,    # schedules can be verbose
     "pricing": 768,
-    "hedging": 1024,         # 8 fields
+    "hedging": 1024,            # 8 fields
     "cash_sweep": 768,
-    "fees": 512,             # 3 simple fields
+    "fees": 512,                # 3 simple fields
 }
 
 # =====================================================================
@@ -327,18 +338,35 @@ FIELD_GROUP_MAX_TOKENS = {
 # the generic prompt, not adding to it).
 
 FIELD_GROUP_SYSTEM_PROMPTS = {
-    "covenants": """You are an expert financial analyst specializing in project finance covenants.
-Your task is to extract financial covenant data with extreme precision.
+    "covenants_general": """You are an expert financial analyst specializing in project finance covenants.
+Your task is to extract DSRA (Debt Service Reserve Account) and general covenant information.
+
+DOMAIN RULES:
+- DSRA = Debt Service Reserve Account. Check for months of debt service required.
+- "Lock-up" / "distribution stopper" / "dividend trap" all mean dividend restriction.
+- "Minimum cash" may appear as "cash covenant", "minimum balance", "cash reserve requirement".
+- "Equity Reserve Account" may also be called "equity cure account" or "equity reserve".
+- "If covenants specified?" = answer Yes if ANY financial covenants are mentioned in the document.
+
+CRITICAL RULES:
+1. ONLY extract information EXPLICITLY stated in the document
+2. Provide exact quotes as evidence
+3. Use "NOT_FOUND" if clearly absent, "POSSIBLY_PRESENT" if likely in another section
+4. Output valid JSON.""",
+
+    "covenants_ratios": """You are an expert financial analyst specializing in project finance coverage and leverage ratios.
+Your task is to extract financial covenant RATIOS with extreme precision.
 
 DOMAIN RULES:
 - Ratios like 1.20:1 mean 1.20x. Always output as X.XXx format.
 - DSCR = Debt Service Coverage Ratio. Look for "debt service coverage", "DSCR", "DS coverage".
-- LLCR = Loan Life Coverage Ratio. PLCR = Project Life Coverage Ratio.
-- ICR = Interest Coverage Ratio. May appear as "interest cover".
-- "Lock-up" / "distribution stopper" / "dividend trap" all mean dividend restriction.
-- Backward-looking DSCR is historical. Forward-looking DSCR is projected.
-- DSRA = Debt Service Reserve Account. Check for months of debt service required.
-- Net Debt / EBITDA is a leverage ratio — look for "gearing", "leverage covenant".
+- Backward-looking DSCR is historical (based on past periods). Forward-looking DSCR is projected (forecast).
+- LLCR = Loan Life Coverage Ratio. PLCR = Project Life Coverage Ratio (NOT the same as LLCR).
+- ICR = Interest Coverage Ratio. May appear as "interest cover" or "interest service coverage".
+- Net Debt / EBITDA is a leverage ratio — look for "gearing", "leverage covenant", "leverage ratio".
+- Dividend Cover Ratio may appear as "distribution cover" or "equity distribution test".
+- Net Debt / RAB relates to regulated utilities — RAB = Regulated Asset Base.
+- Debt / Equity may appear as "gearing ratio", "D/E ratio", "leverage".
 
 CRITICAL RULES:
 1. ONLY extract information EXPLICITLY stated in the document
@@ -500,11 +528,18 @@ IMPORTANT:
 
 FACILITY_DETECTION_PROMPT = """Analyze this document and identify ALL distinct credit facilities or tranches.
 
+IMPORTANT:
+- List EVERY separate facility/tranche individually, even if they share similar terms
+- Term Loan A, Term Loan B, Term Loan C are THREE separate facilities
+- A Capex Facility and a Working Capital Facility are separate from Term Loans
+- If the document defines Facility A, B, C etc. with different amounts or maturities, list each one separately
+- Look for sections titled "The Facilities", "Total Commitments", or clauses listing facility types and amounts
+
 For each facility found, provide:
-1. Facility name
+1. Facility name (e.g., "Facility A", "Term Loan B", "Capex Facility")
 2. Type (Term Loan, RCF, LC, Bond, etc.)
-3. Amount/Limit
-4. Key identifying characteristics
+3. Amount/Limit (with currency)
+4. Key identifying characteristics (maturity, margin)
 
 DOCUMENT TEXT:
 ---
@@ -518,8 +553,20 @@ Respond with JSON:
         {{
             "name": "Facility A",
             "type": "Term Loan",
+            "amount": "EUR 500,000,000",
+            "characteristics": "Senior secured, 3-year tenor"
+        }},
+        {{
+            "name": "Facility B",
+            "type": "Term Loan",
+            "amount": "EUR 200,000,000",
+            "characteristics": "Senior secured, 5-year tenor"
+        }},
+        {{
+            "name": "Revolving Credit Facility",
+            "type": "RCF",
             "amount": "EUR 100,000,000",
-            "characteristics": "Senior secured, 7-year tenor"
+            "characteristics": "5-year, commitment fee 40% of margin"
         }}
     ],
     "is_single_facility": true/false,
