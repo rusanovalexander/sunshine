@@ -46,7 +46,8 @@ from .config import (
     EXTRACTION_SYSTEM_PROMPT, EXTRACTION_USER_TEMPLATE,
     FACILITY_DETECTION_PROMPT, VERIFICATION_PROMPT,
     MAX_NEW_TOKENS, TEMPERATURE, TOP_P, REPETITION_PENALTY,
-    MAX_CHUNKS_PER_FIELD_GROUP, FIELD_GROUP_MAX_TOKENS
+    MAX_CHUNKS_PER_FIELD_GROUP, FIELD_GROUP_MAX_TOKENS,
+    FIELD_GROUP_SYSTEM_PROMPTS
 )
 from .retriever import BM25Retriever, create_retriever_from_chunks, retrieve_for_field_group
 
@@ -56,6 +57,9 @@ try:
     FEW_SHOT_AVAILABLE = True
 except ImportError:
     FEW_SHOT_AVAILABLE = False
+
+# Output normalization
+from .normalize import normalize_field_value
 
 # =====================================================================
 # LOGGING
@@ -224,28 +228,54 @@ def parse_json_response(response: str) -> Optional[Dict]:
 # FACILITY DETECTION
 # =====================================================================
 
-def detect_facilities(document_text: str, model, tokenizer) -> List[Dict]:
+def detect_facilities(document_text: str, model, tokenizer,
+                     retriever: BM25Retriever = None) -> List[Dict]:
     """
     First pass: Detect all distinct facilities/tranches in the document.
     This helps us know if we need per-facility extraction.
+
+    Enhanced with multi-section sampling: instead of only reading the
+    first 15k chars, we also pull relevant sections from schedules
+    and appendices using BM25 retrieval (CPU-only).
     """
-    # Use first ~15000 chars which usually contain facility summary
-    text_sample = document_text[:15000]
-    
-    prompt = FACILITY_DETECTION_PROMPT.format(document_text=text_sample)
-    
+    # Start with the beginning of the document (usually has facility overview)
+    text_parts = [document_text[:10000]]
+
+    # Use BM25 to find sections mentioning facilities/tranches/schedules
+    if retriever:
+        facility_keywords = (
+            "facility tranche schedule term loan revolving RCF "
+            "letter of credit commitment amount aggregate"
+        )
+        bm25_results = retriever.search(facility_keywords, top_k=5)
+        for _, _, chunk_text in bm25_results:
+            # Avoid duplicating content from the beginning
+            if chunk_text[:200] not in document_text[:10000]:
+                text_parts.append(chunk_text)
+
+    # Also grab from the end of the document (schedules are often at the end)
+    if len(document_text) > 20000:
+        text_parts.append(document_text[-5000:])
+
+    # Combine, keeping within ~15k char budget for the LLM
+    combined = "\n\n---\n\n".join(text_parts)
+    if len(combined) > 15000:
+        combined = combined[:15000]
+
+    prompt = FACILITY_DETECTION_PROMPT.format(document_text=combined)
+
     messages = [
         {"role": "system", "content": "You are a financial analyst. Respond only with valid JSON."},
         {"role": "user", "content": prompt}
     ]
-    
+
     response = llm_generate(messages, model, tokenizer, max_tokens=2048)
     result = parse_json_response(response)
-    
+
     if result and 'facilities' in result:
         logger.info(f"Detected {result.get('total_facilities', 0)} facilities")
         return result['facilities']
-    
+
     # Default: single unnamed facility
     return [{"name": "Primary Facility", "type": "Unknown", "amount": "N/A"}]
 
@@ -291,8 +321,11 @@ def extract_field_group(group_name: str, group_config: Dict,
     if FEW_SHOT_AVAILABLE:
         user_prompt = create_enhanced_extraction_prompt(user_prompt, group_name=group_name)
 
+    # Use group-specific system prompt if available, otherwise generic
+    system_prompt = FIELD_GROUP_SYSTEM_PROMPTS.get(group_name, EXTRACTION_SYSTEM_PROMPT)
+
     messages = [
-        {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt}
     ]
 
@@ -542,7 +575,7 @@ def extraction_to_rows(extraction: DocumentExtraction) -> List[Dict]:
             "Confidence Score": f"{extraction.confidence_score:.2%}"
         }
         
-        # Add all extracted fields
+        # Add all extracted fields (with normalization)
         for field_name in EXTRACTABLE_FIELDS:
             if field_name in facility.fields:
                 field_data = facility.fields[field_name]
@@ -550,7 +583,7 @@ def extraction_to_rows(extraction: DocumentExtraction) -> List[Dict]:
                 if field_data.value == 'POSSIBLY_PRESENT':
                     row[field_name] = "NOT_FOUND"
                 else:
-                    row[field_name] = field_data.value
+                    row[field_name] = normalize_field_value(field_name, field_data.value)
             else:
                 row[field_name] = "NOT_EXTRACTED"
         
@@ -742,7 +775,7 @@ def process_company_consolidated(
     
     # Use beginning of document which typically has facility overview
     sample_text = consolidated.full_text[:20000]
-    facilities = detect_facilities(sample_text, model, tokenizer)
+    facilities = detect_facilities(sample_text, model, tokenizer, retriever=retriever)
     
     logger.info(f"  Found {len(facilities)} facilities")
     
@@ -821,26 +854,42 @@ def extract_with_full_coverage(
             )
             extraction_results.append(result)
         
-        # Strategy 2: Process document in sections for full coverage
-        section_size = max(4, len(consolidated.chunks) // 3)  # ~3-4 sections
-        
-        for section_start in range(0, len(consolidated.chunks), section_size):
-            section_end = min(section_start + section_size, len(consolidated.chunks))
-            section_chunks = [c['text'] for c in consolidated.chunks[section_start:section_end]]
-            
-            if section_chunks:
-                # Check if this section content is already covered
-                section_preview = ' '.join(section_chunks)[:300]
-                already_covered = any(
-                    section_preview[:100] in rc for rc in relevant_chunks
-                ) if relevant_chunks else False
-                
-                if not already_covered:
-                    result = extract_field_group(
-                        group_name, group_config, section_chunks,
-                        facility_context, model, tokenizer
-                    )
-                    extraction_results.append(result)
+        # Check if BM25 pass already found all fields with HIGH confidence
+        all_found = False
+        if extraction_results:
+            found_count = 0
+            for field_name, _ in group_config['fields']:
+                fd = extraction_results[0].get('fields', {}).get(field_name)
+                if fd and isinstance(fd, dict):
+                    val = fd.get('value', 'NOT_FOUND')
+                    conf = fd.get('confidence', 'LOW')
+                    if val not in ('NOT_FOUND', 'N/A', '', None, 'POSSIBLY_PRESENT') and conf == 'HIGH':
+                        found_count += 1
+            if found_count == len(group_config['fields']):
+                all_found = True
+                logger.info(f"      All {found_count} fields found with HIGH confidence, skipping section passes")
+
+        # Strategy 2: Process document in sections for full coverage (skip if all found)
+        if not all_found:
+            section_size = max(4, len(consolidated.chunks) // 3)  # ~3-4 sections
+
+            for section_start in range(0, len(consolidated.chunks), section_size):
+                section_end = min(section_start + section_size, len(consolidated.chunks))
+                section_chunks = [c['text'] for c in consolidated.chunks[section_start:section_end]]
+
+                if section_chunks:
+                    # Check if this section content is already covered
+                    section_preview = ' '.join(section_chunks)[:300]
+                    already_covered = any(
+                        section_preview[:100] in rc for rc in relevant_chunks
+                    ) if relevant_chunks else False
+
+                    if not already_covered:
+                        result = extract_field_group(
+                            group_name, group_config, section_chunks,
+                            facility_context, model, tokenizer
+                        )
+                        extraction_results.append(result)
         
         # Merge results from all passes
         if extraction_results:

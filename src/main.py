@@ -294,26 +294,26 @@ def generate_quality_report():
     logger.info("\n" + "="*60)
     logger.info("GENERATING QUALITY REPORT")
     logger.info("="*60)
-    
+
     from .config import OUTPUT_CSV, EXTRACTION_DIR, EXTRACTABLE_FIELDS
     import pandas as pd
-    
+
     if not os.path.exists(OUTPUT_CSV):
         logger.warning("No output CSV to analyze")
         return
-    
+
     df = pd.read_csv(OUTPUT_CSV)
-    
+
     # Calculate field coverage
     coverage = {}
     for field in EXTRACTABLE_FIELDS:
         if field in df.columns:
             non_empty = df[field].notna() & ~df[field].isin(['NOT_FOUND', 'N/A', '', 'NOT_EXTRACTED'])
             coverage[field] = non_empty.sum() / len(df) * 100
-    
+
     # Sort by coverage
     sorted_coverage = sorted(coverage.items(), key=lambda x: x[1], reverse=True)
-    
+
     report = {
         "timestamp": datetime.now().isoformat(),
         "total_rows": len(df),
@@ -323,16 +323,53 @@ def generate_quality_report():
         "low_coverage_fields": [k for k, v in sorted_coverage if v < 30],
         "high_coverage_fields": [k for k, v in sorted_coverage if v > 70],
     }
-    
+
     report_path = os.path.join(EXTRACTION_DIR, "quality_report.json")
     with open(report_path, 'w') as f:
         json.dump(report, f, indent=2)
-    
+
     logger.info(f"  Total documents: {len(df)}")
     logger.info(f"  Average field coverage: {report['average_coverage']:.1f}%")
     logger.info(f"  High coverage fields (>70%): {len(report['high_coverage_fields'])}")
     logger.info(f"  Low coverage fields (<30%): {len(report['low_coverage_fields'])}")
     logger.info(f"  Report saved to: {report_path}")
+
+
+def run_quality_comparison(args):
+    """Compare extraction results against a golden record CSV (e.g. Gemini 2.5 Pro)."""
+    logger.info("\n" + "="*60)
+    logger.info("QUALITY COMPARISON: Golden Record vs Extraction")
+    logger.info("="*60)
+
+    from .config import OUTPUT_CSV, EXTRACTION_DIR
+    from .quality_compare import run_comparison
+
+    golden_csv = args.golden_csv
+    extracted_csv = args.extracted_csv or OUTPUT_CSV
+
+    if not os.path.exists(golden_csv):
+        logger.error(f"Golden record CSV not found: {golden_csv}")
+        return False
+
+    if not os.path.exists(extracted_csv):
+        logger.error(f"Extracted CSV not found: {extracted_csv}")
+        return False
+
+    output_path = os.path.join(EXTRACTION_DIR, "quality_comparison.json")
+
+    report = run_comparison(
+        golden_csv=golden_csv,
+        extracted_csv=extracted_csv,
+        company_filter=args.company,
+        output_path=output_path
+    )
+
+    if report:
+        logger.info(f"  Overall accuracy: {report.get('overall_accuracy', 'N/A')}")
+        logger.info(f"  Comparison report saved to: {output_path}")
+        return True
+
+    return False
 
 
 # =====================================================================
@@ -344,10 +381,10 @@ def main():
         description="Project Sunshine Document Extraction Pipeline v2"
     )
     parser.add_argument(
-        "--stage", 
-        choices=['all', 'preprocess', 'extract', 'report'],
+        "--stage",
+        choices=['all', 'preprocess', 'extract', 'report', 'compare'],
         default='all',
-        help="Which stage to run"
+        help="Which stage to run (use 'compare' for golden record comparison)"
     )
     parser.add_argument(
         "--ocr_method",
@@ -368,6 +405,14 @@ def main():
         "--skip_preprocess",
         action="store_true",
         help="Skip preprocessing if already done"
+    )
+    parser.add_argument(
+        "--golden_csv",
+        help="Path to golden record CSV (e.g. Gemini 2.5 Pro results) for quality comparison"
+    )
+    parser.add_argument(
+        "--extracted_csv",
+        help="Path to extracted CSV to compare against golden record (defaults to pipeline output)"
     )
     
     args = parser.parse_args()
@@ -400,6 +445,12 @@ def main():
         
         if args.stage in ['all', 'report']:
             generate_quality_report()
+
+        if args.stage == 'compare':
+            if not args.golden_csv:
+                logger.error("--golden_csv is required for 'compare' stage")
+                return 1
+            run_quality_comparison(args)
         
     except KeyboardInterrupt:
         logger.warning("\nPipeline interrupted by user")
