@@ -478,6 +478,46 @@ class CUDAStreamManager:
 # OPTIMIZED MODEL LOADING
 # =====================================================================
 
+def _detect_quantization(model_path: str) -> str:
+    """
+    Auto-detect if a model directory contains pre-quantized weights.
+
+    Returns:
+        "fp8"  - Native FP8 quantized (quantization_config in config.json)
+        "gptq" - GPTQ quantized
+        "awq"  - AWQ quantized
+        "none" - Full precision / not pre-quantized
+    """
+    import json
+
+    config_path = os.path.join(model_path, "config.json")
+    if not os.path.exists(config_path):
+        return "none"
+
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return "none"
+
+    # Check for quantization_config in model config (native FP8 / transformers)
+    quant_config = config.get("quantization_config", {})
+    quant_method = quant_config.get("quant_method", "").lower()
+
+    if quant_method == "fp8":
+        return "fp8"
+    elif quant_method == "gptq":
+        return "gptq"
+    elif quant_method == "awq":
+        return "awq"
+
+    # Also check for FP8 checkpoint marker files
+    if os.path.exists(os.path.join(model_path, "fp8_config.json")):
+        return "fp8"
+
+    return "none"
+
+
 def load_llm_optimized(
     model_path: str,
     use_flash_attention: bool = True,
@@ -485,51 +525,88 @@ def load_llm_optimized(
 ) -> Tuple[any, any]:
     """
     Load LLM with optimized settings for A100 20GB.
+
+    Auto-detects pre-quantized weights (FP8, GPTQ, AWQ) and loads
+    them directly — skipping slow on-the-fly BitsAndBytes quantization.
+    Falls back to 4-bit NF4 BitsAndBytes if no pre-quantized weights found.
     """
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-    
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
     aggressive_memory_cleanup()
-    
-    # Quantization config optimized for A100
-    quant_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_use_double_quant=True,  # Further memory reduction
-    )
-    
+
     # Attention implementation
     attn_impl = "flash_attention_2" if use_flash_attention else "sdpa"
-    
+
     # Max memory mapping for device
     max_memory = {0: f"{max_memory_gb}GB", "cpu": "30GB"}
-    
+
+    # Auto-detect pre-quantized weights
+    quant_type = _detect_quantization(model_path)
+
     logger.info(f"Loading LLM from {model_path}")
-    logger.info(f"  Config: 4-bit NF4, double quant, {attn_impl}, max {max_memory_gb}GB")
-    
-    model = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        quantization_config=quant_config,
-        device_map="auto",
-        max_memory=max_memory,
-        trust_remote_code=True,
-        attn_implementation=attn_impl,
-        torch_dtype=torch.float16,
-        low_cpu_mem_usage=True,
-    )
-    
-    # Enable gradient checkpointing for memory efficiency (if training)
-    # model.gradient_checkpointing_enable()
-    
+    logger.info(f"  Detected quantization: {quant_type}")
+
+    if quant_type == "fp8":
+        # ─── FP8 pre-quantized: load directly, no BitsAndBytes needed ───
+        logger.info(f"  Config: FP8 pre-quantized, {attn_impl}, max {max_memory_gb}GB")
+
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            device_map="auto",
+            max_memory=max_memory,
+            trust_remote_code=True,
+            attn_implementation=attn_impl,
+            torch_dtype="auto",  # Let the model config decide dtype
+            low_cpu_mem_usage=True,
+        )
+
+    elif quant_type in ("gptq", "awq"):
+        # ─── GPTQ/AWQ pre-quantized: load directly ───
+        logger.info(f"  Config: {quant_type.upper()} pre-quantized, {attn_impl}, max {max_memory_gb}GB")
+
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            device_map="auto",
+            max_memory=max_memory,
+            trust_remote_code=True,
+            attn_implementation=attn_impl,
+            torch_dtype=torch.float16,
+            low_cpu_mem_usage=True,
+        )
+
+    else:
+        # ─── No pre-quantized weights: use BitsAndBytes 4-bit NF4 ───
+        from transformers import BitsAndBytesConfig
+
+        quant_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+        )
+
+        logger.info(f"  Config: 4-bit NF4 (BitsAndBytes), {attn_impl}, max {max_memory_gb}GB")
+
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            quantization_config=quant_config,
+            device_map="auto",
+            max_memory=max_memory,
+            trust_remote_code=True,
+            attn_implementation=attn_impl,
+            torch_dtype=torch.float16,
+            low_cpu_mem_usage=True,
+        )
+
     # Optimize for inference
     model.eval()
-    
+
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
-    
+
     log_gpu_memory("After LLM load: ")
-    
+
     return model, tokenizer
 
 
