@@ -374,6 +374,16 @@ def extract_field_group(group_name: str, group_config: Dict,
     if facility_context:
         document_text = f"[CONTEXT: Extracting data for {facility_context}]\n\n{document_text}"
 
+    # Pre-truncate document text to ensure the FULL prompt (with JSON format
+    # instructions at the end) fits within the safe input limit.
+    # Budget: ~1500 tokens for system prompt + field descriptions + format instructions
+    # Remaining: 8000 - 1500 = 6500 tokens max for document text
+    max_doc_tokens = 6500
+    doc_tokens = tokenizer.encode(document_text, add_special_tokens=False)
+    if len(doc_tokens) > max_doc_tokens:
+        logger.info(f"      Trimming document text from {len(doc_tokens)} to {max_doc_tokens} tokens")
+        document_text = tokenizer.decode(doc_tokens[:max_doc_tokens], skip_special_tokens=True)
+
     # Build prompt
     user_prompt = EXTRACTION_USER_TEMPLATE.format(
         fields_description=fields_description,
@@ -474,15 +484,15 @@ def verify_extraction(extractions: Dict, document_sample: str,
     
     prompt = VERIFICATION_PROMPT.format(
         extracted_data=extracted_data,
-        document_text=document_sample[:10000]
+        document_text=document_sample[:5000]  # ~5K chars ≈ ~1.5K tokens
     )
-    
+
     messages = [
         {"role": "system", "content": "You are a financial analyst performing quality control. Respond only with valid JSON."},
         {"role": "user", "content": prompt}
     ]
-    
-    response = llm_generate(messages, model, tokenizer, max_tokens=3000)
+
+    response = llm_generate(messages, model, tokenizer, max_tokens=1024)
     return parse_json_response(response) or {}
 
 
