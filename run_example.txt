@@ -159,3 +159,165 @@ def initialize_model(model_path=MODEL_PATH):
     except Exception as e:
         logger.critical(f"FATAL: Model initialization failed: {e}", exc_info=True)
         return None, None
+
+(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_4/sunshine-master$ python -m src.main   --stage all   --ocr_method easyocr   --retriever embedding   --company "ABP Acquisitions UK Limited_39306327"
+
+    ╔═══════════════════════════════════════════════════════════════╗
+    ║     PROJECT SUNSHINE - Document Extraction Pipeline v2        ║
+    ║     Multi-Pass Evidence-Based Extraction System               ║
+    ╠═══════════════════════════════════════════════════════════════╣
+    ║  Stage 1: Document Preprocessing                              ║
+    ║  Stage 2: Multi-Pass Field Group Extraction                   ║
+    ║  Stage 3: Deep Field Extraction (Fallback)                    ║
+    ║  Stage 4: Verification & Consolidation                        ║
+    ╚═══════════════════════════════════════════════════════════════╝
+    
+18:25:09 - Pipeline - INFO - Checking environment...
+18:25:09 - Pipeline - INFO -   GPU: NVIDIA A100-PCIE-40GB MIG 4g.20gb (21.1 GB)
+18:25:09 - Pipeline - INFO -   GPU Memory: 21.1GB free / 21.1GB total
+18:25:12 - Pipeline - INFO -   All required packages available
+18:25:12 - Pipeline - INFO - Checking paths...
+18:25:13 - Pipeline - INFO -   LLM model: OK
+18:25:13 - Pipeline - INFO -   VLM model: OK
+18:25:13 - Pipeline - INFO -   Source data: OK
+18:25:13 - Pipeline - INFO - 
+============================================================
+18:25:13 - Pipeline - INFO - STAGE 1: DOCUMENT PREPROCESSING
+18:25:13 - Pipeline - INFO - ============================================================
+18:25:28 - Pipeline - INFO - === Company: ABP Acquisitions UK Limited_39306327 ===
+18:25:28 - Pipeline - INFO - Skipping (exists): Transfer Cert - fully executed CS.pdf
+18:25:28 - Pipeline - INFO - Skipping (exists): Cook_-_Fully_executed_SFA.pdf
+18:25:28 - Pipeline - INFO - Skipping (exists): Transfer certificate - fully executed JPM.pdf
+18:25:28 - Pipeline - INFO - Preprocessing complete. 3 files in manifest.
+18:25:29 - Pipeline - INFO - Unloading VLM to free GPU memory...
+18:25:29 - Pipeline - INFO - After VLM unload: GPU Memory: 0.00GB allocated, 0.00GB reserved, 21.07GB free (0.0% used)
+18:25:29 - Pipeline - INFO - 
+============================================================
+18:25:29 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION (consolidated per company)
+18:25:29 - Pipeline - INFO - ============================================================
+18:25:31 - Pipeline - INFO - Retriever type: embedding
+18:25:31 - Pipeline - INFO - Loading LLM model...
+18:25:31 - Pipeline - INFO - Loading model: /home/inghero/data/irwbds/llm/parc/qwen3_14B
+18:25:31 - Pipeline - INFO - Before model load: GPU Memory: 0.00GB allocated, 0.00GB reserved, 21.07GB free (0.0% used)
+18:25:32 - Pipeline - INFO - Loading LLM from /home/inghero/data/irwbds/llm/parc/qwen3_14B
+18:25:32 - Pipeline - INFO -   Detected quantization: none
+18:25:32 - Pipeline - INFO -   Config: 4-bit NF4 (BitsAndBytes), sdpa, max 14.0GB
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights: 100%|██████████████████████████████████████████████████████████████████████████████████████| 443/443 [05:22<00:00,  1.37it/s, Materializing param=model.norm.weight]
+18:33:28 - Pipeline - INFO - After LLM load: GPU Memory: 9.96GB allocated, 10.84GB reserved, 10.24GB free (51.4% used)
+18:33:28 - Pipeline - INFO - Model loaded successfully
+18:33:28 - Pipeline - INFO - After model load: GPU Memory: 9.96GB allocated, 10.84GB reserved, 10.24GB free (51.4% used)
+18:33:28 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B...
+18:33:28 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████████████████| 310/310 [00:12<00:00, 25.04it/s, Materializing param=norm.weight]
+18:33:51 - Pipeline - INFO -   Embedding model loaded on cuda
+18:33:52 - Pipeline - INFO - Processing 1 companies (3 files total)
+18:33:52 - Pipeline - INFO - 
+════════════════════════════════════════════════════════════
+18:33:52 - Pipeline - INFO - Company 1/1: ABP Acquisitions UK Limited_39306327 (3 files)
+18:33:52 - Pipeline - INFO - ════════════════════════════════════════════════════════════
+18:33:52 - Pipeline - INFO -   Step 1: Consolidating all files...
+18:33:52 - Pipeline - INFO - Consolidating 3 files for ABP Acquisitions UK Limited_39306327
+18:33:52 - Pipeline - INFO -   Combined document: 304,718 chars, ~75,754 tokens
+18:33:52 - Pipeline - INFO -   Source files: 3
+18:33:52 - Pipeline - INFO -   Creating chunks: 75754 tokens, size=3000, overlap=500
+18:33:53 - Pipeline - INFO -   Created 31 chunks covering entire document
+18:33:53 - Pipeline - INFO -   ✓ Complete coverage verified: 100.00%
+18:33:53 - Pipeline - INFO -   Consolidated: 75,754 tokens, 31 chunks from 3 files
+18:33:54 - Pipeline - INFO -   Saved consolidated document to extraction_outputs_v2/ABP Acquisitions UK Limited_39306327
+18:33:54 - Pipeline - INFO -   Encoding 31 chunks with embedding model...
+18:33:55 - Pipeline - INFO -   Indexed 31 chunks → embeddings shape torch.Size([31, 1024])
+18:33:56 - Pipeline - INFO -   Embedding model offloaded to CPU (GPU freed for LLM)
+18:33:56 - Pipeline - INFO -   Step 2: Detecting facilities...
+18:34:40 - Pipeline - INFO - Detected 3 facilities
+18:34:40 - Pipeline - INFO -   Found 3 facilities
+18:34:40 - Pipeline - INFO -   Step 3.1: Extracting for Term Loan C (Term Loan)
+18:34:40 - Pipeline - INFO -     Extracting: Basic Facility Information
+18:34:55 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+18:34:55 - Pipeline - WARNING - Failed to parse JSON from response
+18:34:55 - Pipeline - WARNING - Low GPU memory (0.92GB free), reducing max_tokens
+18:35:07 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+18:35:07 - Pipeline - WARNING - Failed to parse JSON from response
+18:35:07 - Pipeline - INFO -     Extracting: Sponsor and Ownership
+18:35:23 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+18:35:24 - Pipeline - WARNING - Failed to parse JSON from response
+18:35:24 - Pipeline - WARNING - Low GPU memory (0.92GB free), reducing max_tokens
+18:35:34 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+18:35:34 - Pipeline - WARNING - Failed to parse JSON from response
+18:35:34 - Pipeline - WARNING - Low GPU memory (0.90GB free), reducing max_tokens
+18:35:44 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+18:35:44 - Pipeline - WARNING - Failed to parse JSON from response
+18:35:45 - Pipeline - INFO -     Extracting: Project Details
+18:36:24 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+18:36:24 - Pipeline - WARNING - Failed to parse JSON from response
+18:36:24 - Pipeline - WARNING - Low GPU memory (0.92GB free), reducing max_tokens
+18:36:36 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+18:36:36 - Pipeline - WARNING - Failed to parse JSON from response
+18:36:36 - Pipeline - INFO -     Extracting: Construction and Guarantees
+18:37:05 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+18:37:05 - Pipeline - WARNING - Failed to parse JSON from response
+18:37:05 - Pipeline - WARNING - Low GPU memory (0.92GB free), reducing max_tokens
+
+(virtual-env) inghero@dsbox-gv20fi:~$ nvidia-smi
+Wed Feb 18 18:37:38 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.82.07              Driver Version: 580.82.07      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          On  |   00000000:3B:00.0 Off |                   On |
+| N/A   65C    P0            246W /  250W |                  N/A   |     N/A      Default |
+|                                         |                        |              Enabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| MIG devices:                                                                            |
++------------------+----------------------------------+-----------+-----------------------+
+| GPU  GI  CI  MIG |              Shared Memory-Usage |        Vol|        Shared         |
+|      ID  ID  Dev |                Shared BAR1-Usage | SM     Unc| CE ENC  DEC  OFA  JPG |
+|                  |                                  |        ECC|                       |
+|==================+==================================+===========+=======================|
+|  0    1   0   0  |           19708MiB / 20096MiB    | 56      0 |  4   0    2    0    0 |
+|                  |               0MiB / 12210MiB    |           |                       |
++------------------+----------------------------------+-----------+-----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+(virtual-env) inghero@dsbox-gv20fi:~$ nvidia-smi
+Wed Feb 18 18:37:40 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.82.07              Driver Version: 580.82.07      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          On  |   00000000:3B:00.0 Off |                   On |
+| N/A   67C    P0            251W /  250W |                  N/A   |     N/A      Default |
+|                                         |                        |              Enabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| MIG devices:                                                                            |
++------------------+----------------------------------+-----------+-----------------------+
+| GPU  GI  CI  MIG |              Shared Memory-Usage |        Vol|        Shared         |
+|      ID  ID  Dev |                Shared BAR1-Usage | SM     Unc| CE ENC  DEC  OFA  JPG |
+|                  |                                  |        ECC|                       |
+|==================+==================================+===========+=======================|
+|  0    1   0   0  |           19708MiB / 20096MiB    | 56      0 |  4   0    2    0    0 |
+|                  |               0MiB / 12210MiB    |           |                       |
++------------------+----------------------------------+-----------+-----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
