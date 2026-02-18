@@ -638,14 +638,15 @@ def load_llm_optimized(
 
     elif quant_type == "bnb4":
         # ─── Saved BitsAndBytes 4-bit: load directly (no re-quantization) ───
-        logger.info(f"  Config: Saved BnB 4-bit (pre-quantized), {attn_impl}, max {max_memory_gb}GB")
+        # Uses "eager" attention + no max_memory cap — matching the original
+        # proven config that fits on 20GB MIG without hidden memory issues.
+        logger.info(f"  Config: Saved BnB 4-bit (pre-quantized), eager attn, no max_memory cap")
 
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
             device_map="auto",
-            max_memory=max_memory,
             trust_remote_code=True,
-            attn_implementation=attn_impl,
+            attn_implementation="eager",
             low_cpu_mem_usage=True,
         )
 
