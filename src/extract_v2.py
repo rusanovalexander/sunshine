@@ -110,19 +110,51 @@ class DocumentExtraction:
 # =====================================================================
 
 def initialize_model(model_path: str, use_flash_attention: bool = False):
-    """Load Qwen3-14B with optimized 4-bit quantization for A100 20GB."""
+    """Load Qwen3-14B with 4-bit quantization.
+
+    Uses the original proven config that works on A100 MIG 4g.20gb.
+    Falls through to load_llm_optimized only for pre-quantized models.
+    """
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
     logger.info(f"Loading model: {model_path}")
     log_gpu_memory("Before model load: ")
-    
+
     try:
-        model, tokenizer = load_llm_optimized(
-            model_path,
-            use_flash_attention=use_flash_attention,
-            max_memory_gb=10.0  # BnB hidden buffers use ~9GB beyond PyTorch-reported;
-                                # cap at 10GB so total real usage ≈ 16-17GB, leaving
-                                # ~3-4GB for KV cache on 20GB MIG
-        )
-        
+        # Check if model is pre-quantized (FP8/GPTQ/AWQ/saved BnB)
+        from .gpu_optimizer import _detect_quantization
+        quant_type = _detect_quantization(model_path)
+
+        if quant_type != "none":
+            # Use optimized loader for pre-quantized models
+            logger.info(f"  Pre-quantized model detected ({quant_type}), using optimized loader")
+            model, tokenizer = load_llm_optimized(
+                model_path,
+                use_flash_attention=use_flash_attention,
+            )
+        else:
+            # Original working config — proven on A100 MIG 4g.20gb
+            logger.info(f"  Using original 4-bit config (eager attn, no max_memory cap)")
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+            )
+            model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                device_map="auto",
+                quantization_config=quantization_config,
+                trust_remote_code=True,
+                attn_implementation="eager",
+                low_cpu_mem_usage=True,
+            )
+            model.eval()
+
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_path, trust_remote_code=True, padding_side='left'
+            )
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token_id = tokenizer.eos_token_id
+
         logger.info("Model loaded successfully")
         log_gpu_memory("After model load: ")
         return model, tokenizer
