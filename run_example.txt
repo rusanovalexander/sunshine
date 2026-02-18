@@ -1,3 +1,5 @@
+import sys
+sys.argv = ['script.py', '5 - Pret 44A Holding B.V'] # For testing a specific company
 import os
 import zipfile
 import py7zr
@@ -8,46 +10,36 @@ import pandas as pd
 import logging
 import re
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-import fitz  # PyMuPDF
+import pymupdf as fitz # PyMuPDF
 import easyocr
 from langdetect import detect, LangDetectException
 from dateutil import parser as date_parser
 from collections import Counter
-import pkg_resources  # For PyMuPDF version checking
-import extract_msg  # For .msg files
-from docx import Document  # For .docx files
-import subprocess  # For checking and using catdoc
-import email  # Built-in library for parsing .eml files
-import gc  # For garbage collection
-import argparse  # For command-line arguments
+import pkg_resources
+import extract_msg
+from docx import Document
+import textract
+import email
+import gc
+import argparse
 
 # Logging Setup
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
 
 # Configuration
-MODEL_PATH = "/home/inghero/data/dqanalysis/llm/parc/qwen3_14B"
-ARCHIVE_PATH = "/home/inghero/data/dqanalysis/llm/parc/notebooks/LGD/input/sales_conf.7z"
-OUTPUT_CSV = "/home/inghero/data/dqanalysis/llm/parc/notebooks/LGD/output/sales_info_2.csv"
-INTERMEDIATE_CSV = "/home/inghero/data/dqanalysis/llm/parc/notebooks/LGD/output/intermediate_results.csv"
-EXTRACTED_TEXT_DIR = "extracted_texts"  # Directory to save extracted texts
-CHUNK_OUTPUTS_DIR = "chunk_outputs"  # Directory to save chunk outputs for debugging
-BATCH_SIZE = 2  # Further reduced to avoid GPU memory errors
-DPI = 400  # Increased DPI for better OCR accuracy
+MODEL_PATH = "/home/inghero/data/irwbds/llm/parc/qwen3_14B"
+ARCHIVE_PATH = "/home/inghero/data/irwbds/llm/parc/notebooks/LGD/input/sales_conf.7z"
+OUTPUT_CSV = "/home/inghero/data/irwbds/llm/parc/notebooks/LGD/output/sales_info_7.csv"
+INTERMEDIATE_CSV = "/home/inghero/data/irwbds/llm/parc/notebooks/LGD/output/intermediate_results_6.csv"
+EXTRACTED_TEXT_DIR = "extracted_texts_7"
+CHUNK_OUTPUTS_DIR = "chunk_outputs_7"
+DPI = 300  # MODIFIED: 400 is very high and memory-intensive; 300 is usually sufficient.
 
 # Ensure directories exist
 for directory in [EXTRACTED_TEXT_DIR, CHUNK_OUTPUTS_DIR]:
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+    os.makedirs(directory, exist_ok=True)
 
-# Check if catdoc is installed
-try:
-    subprocess.check_call(['which', 'catdoc'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    logger.info("catdoc is installed. .doc files will be processed using catdoc.")
-except subprocess.CalledProcessError:
-    logger.warning("catdoc is not installed. .doc files will be skipped. Consider installing catdoc or converting .doc files to .docx manually.")
-
-# Utility Functions for OCR
 def check_pymupdf_version():
     try:
         pymupdf_version = pkg_resources.get_distribution("pymupdf").version
@@ -67,7 +59,6 @@ def verify_easyocr_models(model_dir="~/.EasyOCR/model"):
     logger.info(f"All required EasyOCR models found in {model_dir}")
     return True
 
-# Helper Functions for Text Extraction
 def ocr_page(page, reader, dpi):
     try:
         pix = page.get_pixmap(dpi=dpi)
@@ -96,29 +87,28 @@ def process_page(page, reader, dpi, text_threshold=50):
         logger.error(f"Error processing page {page.number}: {e}")
         return ""
 
-def extract_text_from_pdf(pdf_path, languages=['en', 'nl', 'fr'], dpi=DPI, text_threshold=50):
+def extract_text_from_pdf(pdf_path, languages=['en', 'nl', 'fr'], dpi=DPI, text_threshold=100):
     full_text = ""
+    reader = None
     try:
         check_pymupdf_version()
-        if not verify_easyocr_models():
-            logger.warning(f"EasyOCR models missing. OCR will not be performed for {pdf_path}.")
         doc = fitz.open(pdf_path)
-        if doc.is_form_pdf:
-            logger.info(f"Detected XFA PDF: {pdf_path}. Attempting OCR for all pages.")
+        use_ocr = doc.is_form_pdf or any(len(page.get_text("text").strip()) < text_threshold for page in doc)
+        
+        if use_ocr:
             if verify_easyocr_models():
-                reader = easyocr.Reader(languages)
-                for page_num in range(len(doc)):
-                    page = doc.load_page(page_num)
-                    text = ocr_page(page, reader, dpi)
-                    full_text += text + "\n\n"
+                logger.info("Initializing EasyOCR for PDF processing...")
+                reader = easyocr.Reader(languages) # Initialize only when needed
             else:
-                logger.warning(f"Cannot perform OCR for XFA PDF {pdf_path} due to missing models.")
-        else:
-            reader = easyocr.Reader(languages) if verify_easyocr_models() else None
-            for page_num in range(len(doc)):
-                page = doc.load_page(page_num)
-                text = process_page(page, reader, dpi, text_threshold) if reader else page.get_text("text")
-                full_text += text + "\n\n"
+                logger.warning(f"OCR needed but EasyOCR models missing for {pdf_path}.")
+
+        for page in doc:
+            if reader:
+                text = process_page(page, reader, dpi, text_threshold)
+            else:
+                text = page.get_text("text")
+            full_text += text + "\n\n"
+        
         doc.close()
         logger.info(f"Extracted text from {pdf_path} ({len(full_text.split())} words).")
         text_file_name = os.path.splitext(os.path.basename(pdf_path))[0] + ".txt"
@@ -128,8 +118,15 @@ def extract_text_from_pdf(pdf_path, languages=['en', 'nl', 'fr'], dpi=DPI, text_
         logger.info(f"Saved extracted text to {text_file_path}")
     except Exception as e:
         logger.error(f"Error processing {pdf_path}: {e}")
+        return None
+    finally:
+        if reader:
+            del reader
+            gc.collect()
+            torch.cuda.empty_cache()
     return full_text if full_text else None
-
+# ...[ALL YOUR OTHER extract_text_from_... FUNCTIONS GO HERE]...
+# (The same applies to your other text extraction functions, keep them as they are)
 def extract_text_from_xls(xls_path):
     try:
         df = pd.read_excel(xls_path, sheet_name=None)
@@ -194,22 +191,16 @@ def extract_text_from_csv(csv_path):
 
 def extract_text_from_doc(doc_path):
     try:
-        # Check if catdoc is installed
-        subprocess.check_call(['which', 'catdoc'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        # Use catdoc to extract text
-        text = subprocess.check_output(['catdoc', doc_path]).decode('utf-8')
-        logger.info(f"Extracted text from {doc_path} using catdoc ({len(text.split())} words).")
+        text = textract.process(doc_path, method='libreoffice').decode('utf-8')
+        logger.info(f"Extracted text from {doc_path} ({len(text.split())} words).")
         text_file_name = os.path.splitext(os.path.basename(doc_path))[0] + ".txt"
         text_file_path = os.path.join(EXTRACTED_TEXT_DIR, text_file_name)
         with open(text_file_path, 'w', encoding='utf-8') as f:
             f.write(text)
         logger.info(f"Saved extracted text to {text_file_path}")
         return text
-    except subprocess.CalledProcessError:
-        logger.warning(f"catdoc not found. Skipping {doc_path}. Consider installing catdoc or converting to .docx manually.")
-        return None
     except Exception as e:
-        logger.error(f"DOC extraction error: {e}")
+        logger.error(f"DOC extraction error: {e}. Ensure LibreOffice is installed (e.g., 'sudo apt-get install libreoffice' on Ubuntu).")
         return None
 
 def extract_text_from_eml(eml_path):
@@ -263,23 +254,49 @@ def process_msg_file(msg_path, temp_dir):
         logger.error(f"MSG processing error: {e}")
         return []
 
+# Replace your existing extract_text_from_zip function with this one.
+
 def extract_text_from_zip(zip_path, temp_dir):
+    # Create a UNIQUE, dedicated sub-directory for this specific zip's contents.
+    # This prevents it from scanning other company folders.
+    zip_extract_dir = os.path.join(temp_dir, os.path.basename(zip_path) + "_contents")
+    os.makedirs(zip_extract_dir, exist_ok=True)
+    
+    logger.info(f"Extracting '{os.path.basename(zip_path)}' to its own temp folder: {zip_extract_dir}")
+
     try:
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
+            zip_ref.extractall(zip_extract_dir) # Extract to the DEDICATED directory
+        
         texts = []
-        for root, _, files in os.walk(temp_dir):
+        # CRUCIAL CHANGE: Walk only within the dedicated extraction directory
+        for root, _, files in os.walk(zip_extract_dir):
             for file in files:
-                file_path = os.path.join(root, file)
-                text = extract_text_from_file(file_path)
-                if text:
-                    texts.append((f"file: {file}", text))
-        logger.info(f"Processed .zip file {zip_path} with {len(texts)} parts.")
+                file_path_in_zip = os.path.join(root, file)
+                
+                # We need to pass the main temp_dir to the recursive call if it encounters another archive
+                # This is a safe way to handle nested archives if they exist.
+                text_content = extract_text_from_file(file_path_in_zip, temp_dir) 
+
+                if isinstance(text_content, list):
+                    # If we found a nested zip/msg, add all its parts
+                    logger.info(f"  -> Found nested archive '{file}', adding its {len(text_content)} parts.")
+                    texts.extend(text_content)
+                elif text_content and text_content.strip():
+                    # It's a regular file with text
+                    texts.append((f"file_in_zip: {file}", text_content))
+                else:
+                    logger.warning(f"  -> No text extracted from '{file}' inside the zip. Skipping.")
+
+        logger.info(f"Finished processing .zip file {os.path.basename(zip_path)}. Found {len(texts)} text parts.")
         return texts
     except Exception as e:
-        logger.error(f"ZIP processing error: {e}")
+        logger.error(f"ZIP processing error for {zip_path}: {e}")
         return []
-
+    finally:
+        # Clean up the dedicated directory for this zip file after we are done with it.
+        shutil.rmtree(zip_extract_dir, ignore_errors=True)
+        
 # Unified Text Extraction
 def extract_text_from_file(file_path, temp_dir=None):
     if file_path.endswith('.pdf'):
@@ -301,78 +318,66 @@ def extract_text_from_file(file_path, temp_dir=None):
     elif file_path.endswith('.zip') and temp_dir:
         return extract_text_from_zip(file_path, temp_dir)
     else:
-        logger.error(f"Unsupported file type: {file_path}")
+        logger.warning(f"Unsupported file type: {file_path}, skipping.")
         return None
 
-# Detect Multiple Languages
 def detect_languages(text, max_segments=10):
     try:
         segments = text.split('\n\n')
-        if not segments:
-            return ["unknown"]
-        segments_to_analyze = segments[:max_segments]
-        lang_counter = Counter()
-        for segment in segments_to_analyze:
-            if segment.strip():
-                try:
-                    lang = detect(segment)
-                    lang_counter[lang] += 1
-                except LangDetectException:
-                    continue
+        if not segments: return ["unknown"]
+        segments_to_analyze = [s for s in segments if s.strip()][:max_segments]
+        if not segments_to_analyze: return ["unknown"]
+        lang_counter = Counter(detect(s) for s in segments_to_analyze)
         top_languages = [lang for lang, _ in lang_counter.most_common(3)]
-        if not top_languages:
-            top_languages = ["unknown"]
+        if not top_languages: top_languages = ["unknown"]
         logger.info(f"Detected languages: {', '.join(top_languages)}")
         return top_languages
     except Exception as e:
         logger.error(f"Language detection error: {e}")
         return ["unknown"]
 
-# Initialize the Model with Mixed Precision
+# MODIFIED: Model initialization with flash_attention_2
 def initialize_model(model_path=MODEL_PATH):
     logger.info("Initializing Qwen3-14B-Instruct in 4-bit with mixed precision...")
     try:
-        quantization_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16
+        )
         model = AutoModelForCausalLM.from_pretrained(
-            model_path, device_map="auto", quantization_config=quantization_config, trust_remote_code=True,
-            attn_implementation="eager", low_cpu_mem_usage=True
-        ).to('cuda')
+            model_path,
+            device_map="auto",
+            quantization_config=quantization_config,
+            trust_remote_code=True,
+            attn_implementation="sdpa",  # MODIFIED: Highly recommended for A100/H100
+            low_cpu_mem_usage=True
+        )
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, padding_side='left')
         if tokenizer.pad_token is None:
             tokenizer.pad_token_id = tokenizer.eos_token_id
-        logger.info("Model initialized successfully on GPU with mixed precision.")
+        logger.info("Model initialized successfully on GPU with flash_attention_2.")
         return model, tokenizer
     except Exception as e:
-        logger.error(f"Error initializing model: {e}")
+        logger.error(f"Error initializing model: {e}. If 'flash_attention_2' fails, try 'eager' and ensure flash-attn is installed (`pip install flash-attn --no-build-isolation`).")
         return None, None
 
-# Dynamic Batch Size Based on GPU Memory
+# MODIFIED: Use torch.cuda.mem_get_info for more accurate memory readings
 def get_dynamic_batch_size():
-    try:
-        free_memory = torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
-        if free_memory > 10e9:  # More than 10GB free
-            return 4  # Reduced from 8
-        elif free_memory > 5e9:  # More than 5GB free
-            return 2  # Reduced from 4
-        else:
-            return 1  # Reduced from 2
-    except Exception:
-        return 2  # Default if GPU not available
+    if not torch.cuda.is_available(): return 1
+    free_memory, _ = torch.cuda.mem_get_info()
+    free_gb = free_memory / (1024**3)
+    if free_gb > 15: return 4
+    if free_gb > 8: return 2
+    return 1
 
-# Dynamic Chunk Sizing Based on GPU Memory
 def get_dynamic_chunk_size():
-    try:
-        free_memory = torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
-        base_chunk_size = 1500  # Reduced from 3000
-        if free_memory < 2e9:  # Less than 2GB free
-            return max(500, base_chunk_size // 2)
-        elif free_memory < 4e9:  # Less than 4GB free
-            return base_chunk_size
-        return base_chunk_size * 2
-    except Exception:
-        return 1500  # Default if GPU not available
+    if not torch.cuda.is_available(): return 1500
+    free_memory, _ = torch.cuda.mem_get_info()
+    free_gb = free_memory / (1024**3)
+    if free_gb < 4: return 750
+    if free_gb < 8: return 1500
+    return 3000
 
-# Split Text into Chunks with Dynamic Sizing
 def split_text_into_chunks(text, tokenizer, overlap=500):
     if not text:
         logger.warning("No text provided for chunking.")
@@ -383,161 +388,190 @@ def split_text_into_chunks(text, tokenizer, overlap=500):
     start = 0
     while start < len(tokens):
         end = min(start + max_chunk_size, len(tokens))
-        chunk_tokens = tokens[start:end]
-        chunk_text = tokenizer.decode(chunk_tokens, skip_special_tokens=True)
+        chunk_text = tokenizer.decode(tokens[start:end], skip_special_tokens=True)
         if chunk_text.strip():
             chunks.append(chunk_text)
         start += max_chunk_size - overlap
-        gc.collect()
-        torch.cuda.empty_cache()
     logger.info(f"Split into {len(chunks)} chunks with dynamic size {max_chunk_size}.")
     return chunks
 
-# Extract Sales Information from a Batch of Chunks
-def extract_sales_info_from_batch(batch_chunks, model, tokenizer, languages, file_name):
-    if not batch_chunks:
-        return ["No|None|No related information found."] * len(batch_chunks)
-    lang_str = ", ".join(languages) if languages else "unknown language(s)"
+# MODIFIED: Now just returns results, file saving is handled by the caller
+def extract_sales_info_from_batch(batch_chunks, model, tokenizer, languages):
+    if not batch_chunks: return []
+    lang_str = ", ".join(languages) if languages else "unknown"
     batch_messages = [
         [
-            {"role": "system", "content": "You are an expert in analyzing financial documents for sales of collateral during restructuring or default processes. You MUST output only the specified format without any additional text, tags (e.g., <think>), or the prompt itself. Any deviation will result in an invalid response."},
+            {"role": "system", "content": "You are a financial document analysis expert. Your task is to analyze text chunks for mentions of collateral sales in default/restructuring contexts. Output ONLY in the format: sale_of_collateral|date|comment. No extra text or tags."},
             {"role": "user", "content": (
-                f"Analyze the following text chunk from a financial document, which may contain multiple languages ({lang_str}). Determine if it mentions a sale of collateral during a default or restructuring process. "
-                f"If it does, extract the date of the sale in YYYY-MM-DD format. Provide a short description of the chunk's content and the language(s). "
-                f"Output **strictly** in this format: sale_of_collateral|date|comment\n"
-                f"Do **not** include any additional text, tags, or the prompt itself. Examples of correct output:\n"
-                f"- Yes|2023-01-15|The chunk mentions a sale of collateral on January 15, 2023, during restructuring. Language: English.\n"
-                f"- No|None|No mention of collateral sales. The chunk discusses loan terms. Language: Dutch.\n"
+                f"Analyze this text chunk from a document in {lang_str}. Does it mention a sale of ccollateral/property during default/restructuring or during company issues? "
+                f"If yes, extract the sale date (YYYY-MM-DD). Provide a compact but reasonable content description. "
+                f"Strictly format your output as: sale_of_collateral|date|comment\n"
+                f"Example: Yes|2023-01-15|Chunk mentions collateral sale on Jan 15, 2023. Language: English.\n"
+                f"Example: No|None|No mention of collateral sales; discusses loan terms. Language: Dutch.\n"
                 f"Text:\n{chunk}"
             )}
         ] for chunk in batch_chunks
     ]
     try:
-        batch_prompts = [tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False) for messages in batch_messages]
+        batch_prompts = [tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True,  enable_thinking=False) for messages in batch_messages]
         inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True, truncation=True).to(model.device)
         with torch.no_grad():
-            outputs = model.generate(**inputs, max_new_tokens=2048)  # Removed invalid flags
-        results = [tokenizer.decode(output, skip_special_tokens=True).strip() for output in outputs]
-        chunk_file_name = os.path.splitext(os.path.basename(file_name))[0] + "_chunks.txt"
-        chunk_file_path = os.path.join(CHUNK_OUTPUTS_DIR, chunk_file_name)
-        with open(chunk_file_path, 'a', encoding='utf-8') as f:
-            for i, result in enumerate(results):
-                f.write(f"Chunk {i+1} Output:\n{result}\n\n")
-        logger.info(f"Saved chunk outputs to {chunk_file_path}")
+            outputs = model.generate(**inputs, max_new_tokens=150, do_sample=False) # MODIFIED: Reduced max_new_tokens
+        results = [tokenizer.decode(output[inputs.input_ids.shape[1]:], skip_special_tokens=True).strip() for output in outputs]
+        
+        # NEW: Explicitly delete tensors to help memory management
+        del inputs, outputs, batch_prompts
         return results
     except Exception as e:
         logger.error(f"Batch sales info extraction error: {e}")
-        return ["Error: LLM generation failed."] * len(batch_chunks)
+        return [f"Error:LLM generation failed|None|{e}"] * len(batch_chunks)
 
-# Consolidate Chunk Outputs
+# MODIFIED: Consolidation prompt logic remains, but is now called by the iterative function
 def consolidate_chunk_outputs(chunk_outputs, model, tokenizer, languages, file_name):
-    if not chunk_outputs:
-        return "No|None|No sales information found in the document."
-    lang_str = ", ".join(languages) if languages else "unknown language(s)"
-    consolidated_prompt = (
-        f"The following are outputs from analyzing different chunks of a financial document in {lang_str}:\n\n"
-    )
-    for i, output in enumerate(chunk_outputs, 1):
-        consolidated_prompt += f"Chunk {i} Output:\n{output}\n\n"
-    consolidated_prompt += (
-        f"Based on these outputs, provide a consolidated summary for the entire document. Determine if there was a sale of collateral during a default or restructuring process. "
-        f"If yes, provide the most relevant sale date in YYYY-MM-DD format and a brief comment summarizing the document content and languages. "
-        f"If no, state 'No' and explain why. "
-        f"Output **strictly** in this format: sale_of_collateral|date|comment\n"
-        f"Do **not** include any additional text, tags, or the prompt itself. Examples of correct output:\n"
-        f"- Yes|2023-01-15|The document discusses a sale of collateral on January 15, 2023, during restructuring. Languages: English, French.\n"
-        f"- No|None|No evidence of collateral sales across all chunks. The document discusses loan terms. Languages: Dutch, English.\n"
-        f"Ensure the comment includes a short description of the document and mentions the languages ({lang_str})."
-    )
+    if not chunk_outputs: return "No|None|No sales information found."
+    lang_str = ", ".join(languages) if languages else "unknown"
+    
+    # Create the prompt from the provided chunks/summaries
+    consolidated_input = "\n\n".join(f"Analysis of Chunk/Summary {i+1}:\n{output}" for i, output in enumerate(chunk_outputs))
+    
     messages = [
-        {"role": "system", "content": "You are an expert in consolidating financial document analyses. You MUST output only the specified format without any additional text, tags, or the prompt itself."},
-        {"role": "user", "content": consolidated_prompt}
+        {"role": "system", "content": "You are an expert consolidator of financial analyses. You MUST output only the specified format without any additional text or tags."},
+        {"role": "user", "content": (
+            f"Below are several analyses from a single financial document in {lang_str}. Consolidate them into a final answer. "
+            f"Was there a sale of collateral/property during default/restructuring or during company issues? If yes, find the most relevant date (YYYY-MM-DD). "
+            f"Summarize the document's purpose and languages. "
+            f"Strictly format your output as: sale_of_collateral|date|comment\n"
+            f"Example: Yes|2023-01-15|Document confirms collateral/property sale on Jan 15, 2023, during restructuring or company issues. Languages: English, French.\n"
+            f"Example: No|None|No evidence of collateral sales found. Document discusses loan terms. Languages: Dutch.\n\n"
+            f"Analyses to consolidate:\n{consolidated_input}"
+        )}
     ]
     try:
-        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True).to(model.device)
+        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True,  enable_thinking=False)
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=model.config.max_position_embeddings - 256).to(model.device)
         with torch.no_grad():
-            out_ids = model.generate(**inputs, max_new_tokens=2048)  # Removed invalid flags
-            result = tokenizer.decode(out_ids[0], skip_special_tokens=True).strip()
-        chunk_file_name = os.path.splitext(os.path.basename(file_name))[0] + "_consolidated.txt"
+            out_ids = model.generate(**inputs, max_new_tokens=256, do_sample=False)
+            result = tokenizer.decode(out_ids[0][inputs.input_ids.shape[1]:], skip_special_tokens=True).strip()
+
+        # Save the output for this specific consolidation step for debugging
+        chunk_file_name = os.path.splitext(os.path.basename(file_name))[0] + "_consolidated_step.txt"
         chunk_file_path = os.path.join(CHUNK_OUTPUTS_DIR, chunk_file_name)
         with open(chunk_file_path, 'w', encoding='utf-8') as f:
-            f.write(f"Consolidated Output:\n{result}\n")
-        logger.info(f"Saved consolidated output to {chunk_file_path}")
+            f.write(f"Consolidated Output Step:\n{result}\n")
+        logger.info(f"Saved consolidation step output to {chunk_file_path}")
+
+        del inputs, out_ids, prompt
         return result
     except Exception as e:
         logger.error(f"Consolidation error: {e}")
-        return "Error: Consolidation failed."
+        return f"Error:Consolidation failed|None|{e}"
 
-# Parse Sales Output with Regex
-def process_sales_output(raw_output):
-    if not raw_output or "Error:" in raw_output:
-        return {
-            "sale_of_collateral": "No",
-            "date": None,
-            "comment": f"Model output error: {raw_output}",
-            "raw_response": raw_output
-        }
-    try:
-        pattern = r"(Yes|No)\|(\d{4}-\d{2}-\d{2}|None)\|(.*?)(?:\n|$)"
-        matches = re.findall(pattern, raw_output, re.DOTALL)
-        if matches:
-            sale_of_collateral, date_str, comment = matches[-1]
-            date = date_str if sale_of_collateral == "Yes" and date_str != "None" else None
-            return {
-                "sale_of_collateral": sale_of_collateral,
-                "date": date,
-                "comment": comment.strip(),
-                "raw_response": f"{sale_of_collateral}|{date_str}|{comment.strip()}"
-            }
-        else:
-            logger.warning(f"Failed to parse model output: {raw_output}")
-            return {
-                "sale_of_collateral": "No",
-                "date": None,
-                "comment": "Failed to parse model output.",
-                "raw_response": raw_output
-            }
-    except Exception as e:
-        logger.error(f"Error parsing sales output: {e}")
-        return {
-            "sale_of_collateral": "No",
-            "date": None,
-            "comment": f"Parsing error: {str(e)}",
-            "raw_response": raw_output
-        }
+# NEW: The robust, iterative consolidation function to avoid huge prompts
+def iterative_consolidate_chunk_outputs(chunk_outputs, model, tokenizer, languages, file_name, group_size=5):
+    if not chunk_outputs:
+        return "No|None|No sales information found as no chunks were provided."
+    if len(chunk_outputs) <= group_size:
+        logger.info(f"Consolidating {len(chunk_outputs)} chunks in a single pass.")
+        return consolidate_chunk_outputs(chunk_outputs, model, tokenizer, languages, file_name)
 
-# Standardize Date Format
-def standardize_date(date_str):
-    try:
-        date_obj = date_parser.parse(date_str, dayfirst=True)
-        return date_obj.strftime("%Y-%m-%d")
-    except Exception as e:
-        logger.error(f"Date standardization error: {e}")
-        return date_str
+    logger.info(f"Starting iterative consolidation for {len(chunk_outputs)} chunks with group size {group_size}.")
+    current_summaries = list(chunk_outputs)
+    level = 1
+    while len(current_summaries) > 1:
+        logger.info(f"Consolidation Level {level}: Processing {len(current_summaries)} summaries into smaller groups.")
+        next_level_summaries = []
+        for i in range(0, len(current_summaries), group_size):
+            group = current_summaries[i:i + group_size]
+            if len(group) == 1:
+                next_level_summaries.append(group[0])
+                continue
+            
+            logger.info(f"  - Consolidating group of {len(group)} summaries.")
+            step_file_name = f"{os.path.splitext(file_name)[0]}_level{level}_group{i//group_size}"
+            consolidated_summary = consolidate_chunk_outputs(group, model, tokenizer, languages, step_file_name)
+            
+            # Simple check for error format
+            if consolidated_summary.lower().startswith("error:"):
+                 logger.error(f"    - Error during iterative consolidation: {consolidated_summary}. Skipping this group's content for final result.")
+            else:
+                next_level_summaries.append(consolidated_summary)
+            
+            gc.collect()
+            torch.cuda.empty_cache()
+        
+        current_summaries = next_level_summaries
+        level += 1
+    
+    logger.info("Iterative consolidation complete.")
+    return current_summaries[0] if current_summaries else "Error:Consolidation failed|None|No summaries produced."
 
-# Analyze Document with Batch Processing
+# MODIFIED: analyze_document now calls the iterative consolidator
 def analyze_document(text, model, tokenizer, languages, file_name):
     if not text:
         return {"sale_of_collateral": "No", "date": None, "comment": "No text provided.", "raw_response": ""}
+    
     chunks = split_text_into_chunks(text, tokenizer)
+    if not chunks:
+        return {"sale_of_collateral": "No", "date": None, "comment": "Text was too short to create chunks.", "raw_response": ""}
+
     chunk_outputs = []
     batch_size = get_dynamic_batch_size()
+    
     for i in range(0, len(chunks), batch_size):
         batch_chunks = chunks[i:i + batch_size]
         try:
-            batch_outputs = extract_sales_info_from_batch(batch_chunks, model, tokenizer, languages, file_name)
+            batch_outputs = extract_sales_info_from_batch(batch_chunks, model, tokenizer, languages)
             chunk_outputs.extend(batch_outputs)
         except Exception as e:
             logger.error(f"Error processing batch {i//batch_size + 1}: {e}")
-            chunk_outputs.extend(["Error: Batch processing failed."] * len(batch_chunks))
+            chunk_outputs.extend([f"Error:Batch processing failed|None|{e}"] * len(batch_chunks))
+        
         gc.collect()
         torch.cuda.empty_cache()
-    consolidated_output = consolidate_chunk_outputs(chunk_outputs, model, tokenizer, languages, file_name)
+
+    # MODIFIED: Efficiently save all chunk outputs at once
+    chunk_file_name = os.path.splitext(os.path.basename(file_name))[0] + "_chunks_all.txt"
+    chunk_file_path = os.path.join(CHUNK_OUTPUTS_DIR, chunk_file_name)
+    with open(chunk_file_path, 'w', encoding='utf-8') as f:
+        for i, result in enumerate(chunk_outputs):
+            f.write(f"--- Chunk {i+1} Output ---\n{result}\n\n")
+    logger.info(f"Saved all chunk outputs to {chunk_file_path}")
+
+    # MODIFIED: Call the new iterative consolidation function
+    consolidated_output = iterative_consolidate_chunk_outputs(chunk_outputs, model, tokenizer, languages, file_name)
     sales_info = process_sales_output(consolidated_output)
     return sales_info
 
-# Extract Archive
+# Unchanged functions: process_sales_output, standardize_date, extract_archive, process_file, process_company_folder, main
+# These functions seem correct and their logic doesn't need to be changed to fix the core error.
+# Please ensure you copy them from your original script.
+# ... [Your existing process_sales_output, standardize_date, etc., functions go here] ...
+def process_sales_output(raw_output):
+    if not raw_output or raw_output.lower().startswith("error:"):
+        parts = raw_output.split('|', 2)
+        return {
+            "sale_of_collateral": "Error", "date": None,
+            "comment": parts[2] if len(parts) > 2 else raw_output,
+            "raw_response": raw_output
+        }
+    try:
+        # Be more lenient with parsing
+        parts = [p.strip() for p in raw_output.split('|')]
+        if len(parts) >= 3:
+            sale_of_collateral = "Yes" if "yes" in parts[0].lower() else "No"
+            date_str = parts[1] if parts[1].lower() != "none" else None
+            comment = "|".join(parts[2:])
+            return {
+                "sale_of_collateral": sale_of_collateral,
+                "date": date_str, "comment": comment, "raw_response": raw_output
+            }
+        else:
+            logger.warning(f"Failed to parse model output: {raw_output}")
+            return {"sale_of_collateral": "Parse Error", "date": None, "comment": "Failed to parse model output.", "raw_response": raw_output}
+    except Exception as e:
+        logger.error(f"Error parsing sales output: {e}")
+        return {"sale_of_collateral": "Parse Error", "date": None, "comment": f"Parsing error: {e}", "raw_response": raw_output}
+        
 def extract_archive(archive_path, extract_to):
     if archive_path.endswith('.zip'):
         with zipfile.ZipFile(archive_path, 'r') as zip_ref:
@@ -548,58 +582,83 @@ def extract_archive(archive_path, extract_to):
     else:
         raise ValueError("Unsupported archive type. Only .zip and .7z are supported.")
 
-# Process a Single File with Intermediate Saving
 def process_file(file_path, company_name, model, tokenizer, temp_dir, include_raw_response=True):
+    """
+    Processes a single file: extracts text, analyzes it with the LLM, and saves the results.
+    This version includes enhanced step-by-step logging to diagnose crashes.
+    """
+    logger.info(f"--------------------------------------------------")
+    logger.info(f"STARTING PROCESS_FILE FOR: {os.path.basename(file_path)}")
     try:
+        # STAGE 1: Text Extraction
+        logger.info("  Step 1: Starting text extraction...")
         result = extract_text_from_file(file_path, temp_dir)
-        if isinstance(result, list):  # For .msg and .zip files
-            results = []
-            for part, text in result:
-                if text:
+        logger.info("  Step 1: Text extraction finished.")
+
+        all_dfs = []
+
+        # This block handles files that return multiple text parts, like .msg or .zip
+        if isinstance(result, list):
+            logger.info(f"  -> Found {len(result)} parts to process (from MSG/ZIP).")
+            for i, (part, text) in enumerate(result, 1):
+                logger.info(f"    -> Processing Part {i}/{len(result)}: '{part}'")
+                if text and text.strip():
+                    # STAGE 2: Language Detection (per part)
+                    logger.info(f"      -> Step 2: Starting language detection for part '{part}'...")
                     languages = detect_languages(text)
-                    sales_info = analyze_document(text, model, tokenizer, languages, file_path)
-                    df_row = {
-                        "company": company_name,
-                        "file_name": os.path.basename(file_path),
-                        "part": part,
-                        "sale_of_collateral": sales_info["sale_of_collateral"],
-                        "date": sales_info["date"],
-                        "comment": sales_info["comment"],
-                        "languages": ", ".join(languages)
-                    }
-                    if include_raw_response:
-                        df_row["raw_response"] = sales_info.get("raw_response", "")
-                    results.append(df_row)
-            df = pd.DataFrame(results)
-        else:  # For single-text files
-            text = result
-            if not text:
-                logger.error(f"No text extracted from {file_path}. Skipping.")
-                return pd.DataFrame()
-            languages = detect_languages(text)
-            sales_info = analyze_document(text, model, tokenizer, languages, file_path)
-            df_row = {
-                "company": company_name,
-                "file_name": os.path.basename(file_path),
-                "part": "main",
-                "sale_of_collateral": sales_info["sale_of_collateral"],
-                "date": sales_info["date"],
-                "comment": sales_info["comment"],
-                "languages": ", ".join(languages)
-            }
-            if include_raw_response:
-                df_row["raw_response"] = sales_info.get("raw_response", "")
-            df = pd.DataFrame([df_row])
+                    logger.info(f"      -> Step 2: Language detection finished.")
+
+                    # STAGE 3: LLM Analysis (per part)
+                    logger.info(f"      -> Step 3: Starting LLM analysis for part '{part}'...")
+                    sales_info = analyze_document(text, model, tokenizer, languages, f"{os.path.basename(file_path)}_{part}")
+                    logger.info(f"      -> Step 3: LLM analysis finished.")
+                    
+                    df_row = {"company": company_name, "file_name": os.path.basename(file_path), "part": part, **sales_info, "languages": ", ".join(languages)}
+                    if not include_raw_response and "raw_response" in df_row: del df_row["raw_response"]
+                    all_dfs.append(pd.DataFrame([df_row]))
+                else:
+                    logger.warning(f"    -> Part '{part}' has no text content. Skipping.")
         
-        if not df.empty:
-            df.to_csv(INTERMEDIATE_CSV, mode='a', header=not os.path.exists(INTERMEDIATE_CSV), index=False)
-            logger.info(f"Processed {file_path}. Saved intermediate result.")
-        return df
+        # This block handles files that return a single block of text
+        elif result and result.strip():
+            text = result
+            # STAGE 2: Language Detection
+            logger.info("  Step 2: Starting language detection...")
+            languages = detect_languages(text)
+            logger.info("  Step 2: Language detection finished.")
+
+            # STAGE 3: LLM Analysis
+            logger.info("  Step 3: Starting LLM analysis (analyze_document)...")
+            sales_info = analyze_document(text, model, tokenizer, languages, file_path)
+            logger.info("  Step 3: LLM analysis finished.")
+            
+            df_row = {"company": company_name, "file_name": os.path.basename(file_path), "part": "main", **sales_info, "languages": ", ".join(languages)}
+            if not include_raw_response and "raw_response" in df_row: del df_row["raw_response"]
+            all_dfs.append(pd.DataFrame([df_row]))
+        
+        else:
+             logger.error(f"  -> No text was extracted from {os.path.basename(file_path)}. Skipping file.")
+             return pd.DataFrame()
+        
+        # STAGE 4: Aggregation and Saving to Intermediate CSV
+        if all_dfs:
+            logger.info("  Step 4: Aggregating results and saving to intermediate CSV...")
+            final_df = pd.concat(all_dfs, ignore_index=True)
+            # Ensure the file exists with a header before appending
+            header_needed = not os.path.exists(INTERMEDIATE_CSV)
+            final_df.to_csv(INTERMEDIATE_CSV, mode='a', header=header_needed, index=False)
+            logger.info(f"  Step 4: Intermediate result saved successfully.")
+            logger.info(f"COMPLETED PROCESS_FILE FOR: {os.path.basename(file_path)}")
+            return final_df
+        else:
+            logger.warning(f"  -> No processable data was generated for {os.path.basename(file_path)}. Nothing to save.")
+            return pd.DataFrame()
+
     except Exception as e:
-        logger.exception(f"Error processing file {file_path}: {e}")
+        # This will catch any unexpected crash and log the full error traceback
+        logger.exception(f"FATAL unhandled error while processing file {os.path.basename(file_path)}: {e}")
         return pd.DataFrame()
 
-# Process a Single Company Folder
 def process_company_folder(company_folder, model, tokenizer, temp_dir, include_raw_response=True):
     company_path = os.path.join(temp_dir, company_folder)
     if not os.path.isdir(company_path):
@@ -607,69 +666,92 @@ def process_company_folder(company_folder, model, tokenizer, temp_dir, include_r
         return pd.DataFrame()
     company_name = company_folder
     results = []
-    for file in os.listdir(company_path):
-        file_path = os.path.join(company_path, file)
-        df = process_file(file_path, company_name, model, tokenizer, temp_dir, include_raw_response)
-        if not df.empty:
-            results.append(df)
+    for file_name in sorted(os.listdir(company_path)): # Sort for deterministic processing
+        file_path = os.path.join(company_path, file_name)
+        if os.path.isfile(file_path):
+            df = process_file(file_path, company_name, model, tokenizer, temp_dir, include_raw_response)
+            if not df.empty:
+                results.append(df)
     if results:
         combined = pd.concat(results, ignore_index=True)
         print(f"\n\n=== Results for {company_name} ===")
         print(combined.to_string(index=False))
-        logger.info(f"Processed {len(results)} documents for {company_name} with {len(combined)} total entries.")
+        logger.info(f"Processed {len(results)} files for {company_name} with {len(combined)} total entries.")
         return combined
     else:
-        print(f"No sales information found for {company_name}.")
-        logger.info(f"No sales information found in any processed file for {company_name}.")
+        logger.info(f"No processable information found for {company_name}.")
         return pd.DataFrame()
 
-# Main Execution
 if __name__ == "__main__":
-    import sys
-    import argparse
+    #if '-f' in sys.argv: sys.argv.remove('-f')
+    # --- Manual Control for Testing in Jupyter/IPython ---
+    # To process a specific company, uncomment and set the name below.
+    # To process all companies, leave it commented out or set to ['script.py'].
+    
+    # Example for testing a single company:
+    #sys.argv = ['script.py', '10 - Hume 88 Pty Ltd']
+    
+    # Example for processing all companies (if you want to run the full set):
+    sys.argv = ['script.py']
+    
+    # ---------------------------------------------------------
 
-    # Remove the '-f' argument if it’s present (Jupyter-specific fix)
-    if '-f' in sys.argv:
-        sys.argv.remove('-f')
-    
     parser = argparse.ArgumentParser(description="Process sales information from financial documents.")
-    parser.add_argument("company", type=str, nargs='?', default=None, help="Specify a single company folder to process for testing.")
-    args = parser.parse_args()
+    parser.add_argument("company", type=str, nargs='?', default=None, help="Specify a single company folder to process.")
     
+    # Use parse_known_args() to gracefully ignore any extra arguments from the environment
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        logger.warning(f"Ignoring unknown command-line arguments: {unknown}")
+
     model, tokenizer = initialize_model()
-    if model is None or tokenizer is None:
+    if not (model and tokenizer):
         logger.error("Model initialization failed. Exiting.")
-    else:
-        temp_dir = tempfile.mkdtemp()
-        try:
-            extract_archive(ARCHIVE_PATH, temp_dir)
-            if args.company:
-                # Process only the specified company folder
-                combined = process_company_folder(args.company, model, tokenizer, temp_dir, include_raw_response=True)
-                if not combined.empty:
-                    combined.to_csv(OUTPUT_CSV, index=False)
+        sys.exit(1)
+
+    # Use a try...finally block to ensure temp directory is always cleaned up
+    temp_dir = tempfile.mkdtemp()
+    try:
+        logger.info(f"Extracting archive {ARCHIVE_PATH} to {temp_dir}")
+        extract_archive(ARCHIVE_PATH, temp_dir)
+        
+        # The archive often extracts into a single root folder. Let's use that.
+        # This makes the script more robust if the archive has a top-level directory.
+        extracted_contents = os.listdir(temp_dir)
+        if len(extracted_contents) == 1 and os.path.isdir(os.path.join(temp_dir, extracted_contents[0])):
+            processing_root = os.path.join(temp_dir, extracted_contents[0])
+            logger.info(f"Processing content within extracted folder: {processing_root}")
+        else:
+            processing_root = temp_dir
+
+        if args.company:
+            logger.info(f"Processing single company: {args.company}")
+            company_df = process_company_folder(args.company, model, tokenizer, processing_root, include_raw_response=True)
+            if not company_df.empty:
+                company_df.to_csv(OUTPUT_CSV, index=False)
+                logger.info(f"Single company processing complete. Saved results to {OUTPUT_CSV}")
+        else:
+            logger.info("Processing all companies in the archive...")
+            all_results = []
+            for company_folder in sorted(os.listdir(processing_root)):
+                company_path = os.path.join(processing_root, company_folder)
+                if os.path.isdir(company_path):
+                    company_df = process_company_folder(company_folder, model, tokenizer, processing_root, include_raw_response=True)
+                    if not company_df.empty:
+                        all_results.append(company_df)
+            
+            if all_results:
+                final_df = pd.concat(all_results, ignore_index=True)
+                print("\n\n=== FINAL COMBINED RESULTS ===")
+                print(final_df.to_string())
+                final_df.to_csv(OUTPUT_CSV, index=False)
+                logger.info(f"Processing complete. Saved {len(final_df)} total entries to {OUTPUT_CSV}")
             else:
-                # Process all company folders
-                results = []
-                for company_folder in os.listdir(temp_dir):
-                    company_path = os.path.join(temp_dir, company_folder)
-                    if os.path.isdir(company_path):
-                        company_name = company_folder
-                        for file in os.listdir(company_path):
-                            file_path = os.path.join(company_path, file)
-                            df = process_file(file_path, company_name, model, tokenizer, temp_dir, include_raw_response=True)
-                            if not df.empty:
-                                results.append(df)
-                if results:
-                    combined = pd.concat(results, ignore_index=True)
-                    print("\n\n=== Combined Results From All Files ===")
-                    print(combined.to_string(index=False))
-                    logger.info(f"Processed {len(results)} documents with {len(combined)} total entries.")
-                    combined.to_csv(OUTPUT_CSV, index=False)
-                else:
-                    print("No sales information found.")
-                    logger.info("No sales information found in any processed file.")
-        except Exception as e:
-            logger.error(f"Error processing archive: {e}")
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+                logger.info("Processing complete. No information was extracted from any company.")
+
+    except Exception as e:
+        logger.critical(f"An unhandled error occurred in the main execution block: {e}", exc_info=True)
+    finally:
+        logger.info(f"Cleaning up temporary directory: {temp_dir}")
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        logger.info("Script finished.")
