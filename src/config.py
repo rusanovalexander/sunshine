@@ -12,6 +12,7 @@ import os
 # =====================================================================
 MODEL_PATH = "/home/inghero/data/irwbds/llm/parc/qwen3_14B"
 VLM_MODEL_PATH = "/home/inghero/data/irwbds/llm/parc/Qwen2.5-VL-3B-Instruct"
+EMBEDDING_MODEL_PATH = "/home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B"
 
 ARCHIVE_PATH = "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_2/clients_pf_2.zip"
 EXTRACTED_SOURCE_DIR = "extracted_source_data_v2"
@@ -27,6 +28,11 @@ CHUNK_SIZE = 2000  # tokens per chunk
 CHUNK_OVERLAP = 400  # overlap between chunks
 MAX_CHUNKS_PER_FIELD_GROUP = 12  # max chunks to send to LLM per extraction (increased from 8 for better recall)
 DPI = 300  # for PDF rendering
+
+# Retriever Settings
+RETRIEVER_TYPE = "bm25"  # Options: "bm25", "embedding", "hybrid"
+EMBEDDING_BATCH_SIZE = 32  # Batch size for encoding chunks during indexing
+HYBRID_BM25_WEIGHT = 0.5  # Weight for BM25 in hybrid mode (embedding gets 1 - this)
 
 # LLM Settings
 MAX_NEW_TOKENS = 4096

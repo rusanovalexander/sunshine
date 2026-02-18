@@ -49,7 +49,7 @@ from .config import (
     MAX_CHUNKS_PER_FIELD_GROUP, FIELD_GROUP_MAX_TOKENS,
     FIELD_GROUP_SYSTEM_PROMPTS
 )
-from .retriever import BM25Retriever, create_retriever_from_chunks, retrieve_for_field_group
+from .retriever import BM25Retriever, create_retriever_from_chunks, retrieve_for_field_group, load_embedding_model
 
 # Few-shot prompting
 try:
@@ -502,30 +502,37 @@ def calculate_confidence_score(facility_data: FacilityData) -> float:
 # MAIN PROCESSING
 # =====================================================================
 
-def process_document(company: str, manifest_entry: Dict, 
-                    model, tokenizer) -> Optional[DocumentExtraction]:
+def process_document(company: str, manifest_entry: Dict,
+                    model, tokenizer,
+                    retriever_type: str = "bm25",
+                    embedding_model=None,
+                    embedding_tokenizer=None) -> Optional[DocumentExtraction]:
     """Process a single document through the full extraction pipeline."""
-    
+
     # Load chunks
     chunks_file = os.path.join(CHUNKS_DIR, manifest_entry['chunks_file'])
     if not os.path.exists(chunks_file):
         logger.error(f"Chunks file not found: {chunks_file}")
         return None
-    
+
     with open(chunks_file, 'r', encoding='utf-8') as f:
         chunks = json.load(f)
-    
+
     if not chunks:
         logger.warning(f"No chunks in file: {chunks_file}")
         return None
-    
+
     # Load full text for facility detection
     text_file = os.path.join(PREPROCESSED_DATA_DIR, manifest_entry['text_file'])
     with open(text_file, 'r', encoding='utf-8') as f:
         full_text = f.read()
-    
+
     # Create retriever
-    retriever = create_retriever_from_chunks(chunks)
+    retriever = create_retriever_from_chunks(
+        chunks, retriever_type=retriever_type,
+        embedding_model=embedding_model,
+        embedding_tokenizer=embedding_tokenizer
+    )
     
     # Step 1: Detect facilities
     logger.info("  Step 1: Detecting facilities...")
@@ -738,37 +745,44 @@ def run_extraction(company_filter: str = None, model=None, tokenizer=None):
 def process_company_consolidated(
     company: str,
     manifest: List[Dict],
-    model, 
-    tokenizer
+    model,
+    tokenizer,
+    retriever_type: str = "bm25",
+    embedding_model=None,
+    embedding_tokenizer=None
 ) -> Optional[DocumentExtraction]:
     """
     Process ALL files for a company as a single consolidated document.
-    
+
     This ensures:
     1. Information from all files is combined
     2. ALL text is processed by the LLM
     3. Related information across files is connected
     """
-    
+
     # Step 1: Consolidate all files for this company
     logger.info(f"  Step 1: Consolidating all files...")
-    
+
     consolidated = consolidate_company_documents(
         company, manifest, PREPROCESSED_DATA_DIR, tokenizer
     )
-    
+
     if not consolidated or not consolidated.chunks:
         logger.warning(f"  No content found for {company}")
         return None
-    
+
     logger.info(f"  Consolidated: {consolidated.total_tokens:,} tokens, "
                f"{len(consolidated.chunks)} chunks from {len(consolidated.source_files)} files")
-    
+
     # Save consolidated document for debugging
     save_consolidated_document(consolidated, EXTRACTION_DIR)
-    
+
     # Step 2: Create retriever from consolidated chunks
-    retriever = create_retriever_from_chunks(consolidated.chunks)
+    retriever = create_retriever_from_chunks(
+        consolidated.chunks, retriever_type=retriever_type,
+        embedding_model=embedding_model,
+        embedding_tokenizer=embedding_tokenizer
+    )
     
     # Step 3: Detect facilities from the combined document
     logger.info(f"  Step 2: Detecting facilities...")

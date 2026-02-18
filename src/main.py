@@ -159,59 +159,83 @@ def run_extraction(args):
     logger.info("\n" + "="*60)
     logger.info("STAGE 2-4: MULTI-PASS EXTRACTION")
     logger.info("="*60)
-    
-    from .config import MODEL_PATH, PREPROCESSED_DATA_DIR, CHUNKS_DIR, EXTRACTION_DIR, OUTPUT_CSV
+
+    from .config import (
+        MODEL_PATH, PREPROCESSED_DATA_DIR, CHUNKS_DIR, EXTRACTION_DIR, OUTPUT_CSV,
+        EMBEDDING_MODEL_PATH, RETRIEVER_TYPE
+    )
     from .extract_v2 import (
         initialize_model, process_document, extraction_to_rows,
         save_detailed_extraction, llm_generate
     )
     from .deep_extract import deep_extract_missing_fields, cross_reference_fields
-    from .retriever import create_retriever_from_chunks
+    from .retriever import create_retriever_from_chunks, load_embedding_model
     import pandas as pd
-    
-    # Initialize model
+
+    # Determine retriever type
+    retriever_type = getattr(args, 'retriever', None) or RETRIEVER_TYPE
+    logger.info(f"Retriever type: {retriever_type}")
+
+    # Initialize LLM model
     logger.info("Loading LLM model...")
     model, tokenizer = initialize_model(MODEL_PATH, args.flash_attention)
-    
+
     if model is None:
         logger.error("Failed to load model")
         return False
-    
+
+    # Load embedding model if needed
+    embedding_model = None
+    embedding_tokenizer = None
+    if retriever_type in ("embedding", "hybrid"):
+        emb_path = getattr(args, 'embedding_model_path', None) or EMBEDDING_MODEL_PATH
+        logger.info(f"Loading embedding model from {emb_path}...")
+        embedding_model, embedding_tokenizer = load_embedding_model(emb_path)
+
     # Load manifest
     manifest_path = os.path.join(PREPROCESSED_DATA_DIR, "manifest.json")
     if not os.path.exists(manifest_path):
         logger.error(f"Manifest not found: {manifest_path}")
         return False
-    
+
     with open(manifest_path, 'r') as f:
         manifest = json.load(f)
-    
+
     if args.company:
         manifest = [m for m in manifest if m['company'] == args.company]
-    
+
     logger.info(f"Processing {len(manifest)} documents")
-    
+
     os.makedirs(EXTRACTION_DIR, exist_ok=True)
     all_rows = []
-    
+
     for i, entry in enumerate(manifest):
         logger.info(f"\n{'─'*60}")
         logger.info(f"Document {i+1}/{len(manifest)}: {entry['company']} - {entry['original_file']}")
         logger.info(f"{'─'*60}")
-        
+
         try:
             # Stage 2-3: Primary extraction
-            extraction = process_document(entry['company'], entry, model, tokenizer)
-            
+            extraction = process_document(
+                entry['company'], entry, model, tokenizer,
+                retriever_type=retriever_type,
+                embedding_model=embedding_model,
+                embedding_tokenizer=embedding_tokenizer
+            )
+
             if extraction and extraction.facilities:
                 # Stage 3.5: Deep extraction for missing fields
                 logger.info("  Running deep extraction for missing fields...")
-                
+
                 chunks_file = os.path.join(CHUNKS_DIR, entry['chunks_file'])
                 with open(chunks_file, 'r') as f:
                     chunks = json.load(f)
-                
-                retriever = create_retriever_from_chunks(chunks)
+
+                retriever = create_retriever_from_chunks(
+                    chunks, retriever_type=retriever_type,
+                    embedding_model=embedding_model,
+                    embedding_tokenizer=embedding_tokenizer
+                )
                 
                 # Load full text for table extraction in deep extract
                 text_file = os.path.join(PREPROCESSED_DATA_DIR, entry['text_file'])
@@ -405,6 +429,17 @@ def main():
         "--skip_preprocess",
         action="store_true",
         help="Skip preprocessing if already done"
+    )
+    parser.add_argument(
+        "--retriever",
+        choices=['bm25', 'embedding', 'hybrid'],
+        default=None,
+        help="Retriever type: bm25 (keyword), embedding (Qwen3-Embedding-0.6B), hybrid (both combined)"
+    )
+    parser.add_argument(
+        "--embedding_model_path",
+        default=None,
+        help="Path to embedding model (defaults to config EMBEDDING_MODEL_PATH)"
     )
     parser.add_argument(
         "--golden_csv",
