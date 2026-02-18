@@ -651,7 +651,7 @@ def load_llm_optimized(
             trust_remote_code=True,
             attn_implementation="eager",
             low_cpu_mem_usage=True,
-        )
+        ).to('cuda')
 
     else:
         # ─── No pre-quantized weights: use BitsAndBytes 4-bit on-the-fly ───
@@ -674,13 +674,13 @@ def load_llm_optimized(
             trust_remote_code=True,
             attn_implementation="eager",
             low_cpu_mem_usage=True,
-        )
+        ).to('cuda')
 
     # Optimize for inference
     model.eval()
 
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-    if tokenizer.pad_token_id is None:
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, padding_side='left')
+    if tokenizer.pad_token is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
     # Verify chat template is available (critical for Qwen3)
@@ -696,8 +696,8 @@ def load_llm_optimized(
                 _orig = _cfg.get("_name_or_path", "")
                 if _orig and os.path.exists(_orig):
                     logger.info(f"  Loading tokenizer from original: {_orig}")
-                    tokenizer = AutoTokenizer.from_pretrained(_orig, trust_remote_code=True)
-                    if tokenizer.pad_token_id is None:
+                    tokenizer = AutoTokenizer.from_pretrained(_orig, trust_remote_code=True, padding_side='left')
+                    if tokenizer.pad_token is None:
                         tokenizer.pad_token_id = tokenizer.eos_token_id
             except Exception:
                 pass
