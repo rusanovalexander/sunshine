@@ -1,44 +1,117 @@
-, this behavior change is almost certainly due to updates in the transformers and accelerate libraries, combined with how the model is being loaded (specifically with quantization).
-Here is the detailed breakdown of why this is happening and why it is so much slower.
-1. The difference between "Tensors/Shards" and "Weights/Materializing"
-Before ("Loading checkpoint shards 0/8"):
-This indicates that the library was loading file chunks (shards). It was reading large .safetensors or .bin files directly into memory and mapping them to the GPU. This is usually fast.
-Now ("Materializing param... 34/443"):
-This message comes from the accelerate library. It indicates that instead of loading whole files, the system has created an "empty" skeleton of the model (on the "meta" device) and is now initializing (materializing) every single specific parameter (layer by layer, weight by weight) individually.
-2. Why did it switch to this mode?
-The switch usually happens due to device_map="auto" combined with Quantization (bitsandbytes) in newer library versions.
-When you use 4-bit loading (load_in_4bit=True), transformers delegates the loading process to accelerate.
-The "Meta" Device: To save CPU RAM, accelerate creates the model on a "meta" device (it takes up 0 RAM).
-Materialization: It then iterates through every named parameter (e.g., model.layers.2.self_attn.q_proj.weight), finds that data in the disk files, loads just that piece, quantizes it (if necessary), and moves it to the GPU.
-Why is it happening now?
-Missing SafeTensors: If your local model folder (/home/inghero/.../qwen3_14B) contains standard PyTorch .bin files (pickled) but does not contain .safetensors files, or if the model.safetensors.index.json is missing/mismatched, accelerate is forced to take this slow, granular path to ensure it doesn't crash your system RAM.
-Library Update: Newer versions of transformers are more aggressive about using accelerate's low_cpu_mem_usage=True default. If the library detects that loading the full shards might overflow your CPU RAM, it switches to this slow "materialization" loop.
-3. Why is it so slow? (6.05s/it)
-You are seeing 6 seconds per parameter. With 443 parameters, that is roughly 45 minutes to load the model.
-This extreme slowness usually indicates one of two things:
-Re-pickling: It is opening and closing the large .bin checkpoint files hundreds of times to find the tiny slice of data for each specific parameter.
-On-the-fly Quantization: It is loading high-precision weights and calculating the 4-bit quantization for every single layer on the CPU before moving it to the GPU.
-How to fix it (Make it fast again)
-You can likely return to the fast "shard" loading by doing the following:
-1. Ensure safetensors is installed and used
-Safetensors allows memory mapping, which makes loading individual parameters instant.
-code
-Bash
-pip install safetensors
-Check your model directory (/home/inghero/.../qwen3_14B). Does it have .safetensors files? If it only has .bin files, the loading will be slow. You should download the safetensors version of the model from HuggingFace if available.
-2. Update bitsandbytes
-Ensure you have the latest version, as older versions struggled with the new accelerate loading pipeline.
-code
-Bash
-pip install -U bitsandbytes
-3. Modify your loader code (src.main)
-If you have access to the code where AutoModelForCausalLM.from_pretrained is called, explicitly tell it to use safetensors:
-code
-Python
-model = AutoModelForCausalLM.from_pretrained(
-    model_path,
-    device_map="auto",
-    use_safetensors=True,  # Force safetensors
-    # ... other params
-)
-Summary: The change is due to accelerate trying to save your memory by loading item-by-item, but failing to do so efficiently because it is likely reading from .bin files instead of .safetensors, causing massive disk I/O overhead.
+(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_4/sunshine-master$ python -m src.main   --stage all   --ocr_method easyocr   --retriever embedding   --company "ABP Acquisitions UK Limited_39306327" --skip_preprocess
+
+
+    ╔═══════════════════════════════════════════════════════════════╗
+    ║     PROJECT SUNSHINE - Document Extraction Pipeline v2        ║
+    ║     Multi-Pass Evidence-Based Extraction System               ║
+    ╠═══════════════════════════════════════════════════════════════╣
+    ║  Stage 1: Document Preprocessing                              ║
+    ║  Stage 2: Multi-Pass Field Group Extraction                   ║
+    ║  Stage 3: Deep Field Extraction (Fallback)                    ║
+    ║  Stage 4: Verification & Consolidation                        ║
+    ╚═══════════════════════════════════════════════════════════════╝
+    
+21:51:10 - Pipeline - INFO - Checking environment...
+21:51:10 - Pipeline - INFO -   GPU: NVIDIA A100-PCIE-40GB MIG 4g.20gb (21.1 GB)
+21:51:11 - Pipeline - INFO -   GPU Memory: 21.1GB free / 21.1GB total
+21:51:14 - Pipeline - INFO -   All required packages available
+21:51:14 - Pipeline - INFO - Checking paths...
+21:51:14 - Pipeline - INFO -   LLM model: OK
+21:51:14 - Pipeline - INFO -   VLM model: OK
+21:51:14 - Pipeline - INFO -   Source data: OK
+21:51:14 - Pipeline - INFO - Skipping preprocessing (--skip_preprocess)
+21:51:14 - Pipeline - INFO - 
+============================================================
+21:51:14 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION (consolidated per company)
+21:51:14 - Pipeline - INFO - ============================================================
+21:52:04 - Pipeline - INFO - Retriever type: embedding
+21:52:04 - Pipeline - INFO - Loading LLM model...
+21:52:04 - Pipeline - INFO - Loading model: /home/inghero/data/irwbds/llm/parc/qwen3_14B_bnb4
+21:52:04 - Pipeline - INFO - Before model load: GPU Memory: 0.00GB allocated, 0.00GB reserved, 21.07GB free (0.0% used)
+21:52:04 - Pipeline - INFO -   Pre-quantized model detected (bnb4), using optimized loader
+21:52:06 - Pipeline - INFO - Loading LLM from /home/inghero/data/irwbds/llm/parc/qwen3_14B_bnb4
+21:52:06 - Pipeline - INFO -   Detected quantization: bnb4
+21:52:06 - Pipeline - INFO -   Config: Saved BnB 4-bit (pre-quantized), sdpa attn, no max_memory cap
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████| 443/443 [02:09<00:00,  3.43it/s, Materializing param=model.norm.weight]
+21:57:30 - Pipeline - INFO -   ✓ Chat template available
+21:57:30 - Pipeline - INFO - After LLM load: GPU Memory: 9.93GB allocated, 9.96GB reserved, 11.12GB free (47.2% used)
+21:57:30 - Pipeline - INFO - Model loaded successfully
+21:57:30 - Pipeline - INFO - After model load: GPU Memory: 9.93GB allocated, 9.96GB reserved, 11.12GB free (47.2% used)
+21:57:30 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B...
+21:57:30 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights: 100%|██████████████████████████████████████████████████████████████████████████████████| 310/310 [00:15<00:00, 19.60it/s, Materializing param=norm.weight]
+21:57:58 - Pipeline - INFO -   Embedding model loaded on cuda
+21:57:58 - Pipeline - INFO - Processing 1 companies (3 files total)
+21:57:58 - Pipeline - INFO - 
+════════════════════════════════════════════════════════════
+21:57:58 - Pipeline - INFO - Company 1/1: ABP Acquisitions UK Limited_39306327 (3 files)
+21:57:58 - Pipeline - INFO - ════════════════════════════════════════════════════════════
+21:57:58 - Pipeline - INFO -   Step 1: Consolidating all files...
+21:57:58 - Pipeline - INFO - Consolidating 3 files for ABP Acquisitions UK Limited_39306327
+21:57:59 - Pipeline - INFO -   Combined document: 304,718 chars, ~75,754 tokens
+21:57:59 - Pipeline - INFO -   Source files: 3
+21:57:59 - Pipeline - INFO -   Creating chunks: 75754 tokens, size=3000, overlap=500
+21:57:59 - Pipeline - INFO -   Created 31 chunks covering entire document
+21:57:59 - Pipeline - INFO -   ✓ Complete coverage verified: 100.00%
+21:57:59 - Pipeline - INFO -   Consolidated: 75,754 tokens, 31 chunks from 3 files
+21:58:00 - Pipeline - INFO -   Saved consolidated document to extraction_outputs_v2/ABP Acquisitions UK Limited_39306327
+21:58:00 - Pipeline - INFO -   Encoding 31 chunks with embedding model...
+21:58:01 - Pipeline - INFO -   Indexed 31 chunks → embeddings shape torch.Size([31, 1024])
+21:58:02 - Pipeline - INFO -   Embedding model offloaded to CPU (GPU freed for LLM)
+21:58:02 - Pipeline - INFO -   Step 2: Detecting facilities...
+21:58:37 - Pipeline - INFO - Detected 3 facilities
+21:58:37 - Pipeline - INFO -   Found 3 facilities
+21:58:37 - Pipeline - INFO -   Step 3.1: Extracting for Term Loan C (Term Loan)
+21:58:37 - Pipeline - INFO -     Extracting: Basic Facility Information
+21:58:51 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+21:58:51 - Pipeline - WARNING - Failed to parse JSON from response
+21:58:51 - Pipeline - WARNING - Low GPU memory (0.72GB free), reducing max_tokens
+21:59:02 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+21:59:02 - Pipeline - WARNING - Failed to parse JSON from response
+21:59:03 - Pipeline - INFO -     Extracting: Sponsor and Ownership
+21:59:17 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+21:59:17 - Pipeline - WARNING - Failed to parse JSON from response
+21:59:17 - Pipeline - WARNING - Low GPU memory (0.72GB free), reducing max_tokens
+21:59:30 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+21:59:30 - Pipeline - WARNING - Failed to parse JSON from response
+21:59:30 - Pipeline - WARNING - Low GPU memory (1.41GB free), reducing max_tokens
+21:59:43 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+21:59:43 - Pipeline - WARNING - Failed to parse JSON from response
+21:59:43 - Pipeline - INFO -     Extracting: Project Details
+21:59:57 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+21:59:57 - Pipeline - WARNING - Failed to parse JSON from response
+21:59:57 - Pipeline - WARNING - Low GPU memory (0.72GB free), reducing max_tokens
+22:00:08 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+22:00:08 - Pipeline - WARNING - Failed to parse JSON from response
+22:00:08 - Pipeline - INFO -     Extracting: Construction and Guarantees
+22:00:22 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+22:00:22 - Pipeline - WARNING - Failed to parse JSON from response
+22:00:22 - Pipeline - WARNING - Low GPU memory (0.72GB free), reducing max_tokens
+22:00:34 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+22:00:34 - Pipeline - WARNING - Failed to parse JSON from response
+22:00:34 - Pipeline - INFO -     Extracting: Revenue Mitigating Factors
+22:00:50 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+22:00:50 - Pipeline - WARNING - Failed to parse JSON from response
+22:00:51 - Pipeline - INFO -     Extracting: Financial Covenants
+22:01:06 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+22:01:06 - Pipeline - WARNING - Failed to parse JSON from response
+22:01:06 - Pipeline - INFO -     Extracting: Syndication and ING Participation
+22:01:20 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+22:01:20 - Pipeline - WARNING - Failed to parse JSON from response
+22:01:20 - Pipeline - WARNING - Low GPU memory (0.74GB free), reducing max_tokens
+22:01:32 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+22:01:32 - Pipeline - WARNING - Failed to parse JSON from response
+22:01:32 - Pipeline - WARNING - Low GPU memory (0.81GB free), reducing max_tokens
+22:01:43 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+22:01:43 - Pipeline - WARNING - Failed to parse JSON from response
+22:01:43 - Pipeline - INFO -     Extracting: Dates and Schedules
+22:01:58 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+22:01:58 - Pipeline - WARNING - Failed to parse JSON from response
+22:01:58 - Pipeline - INFO -     Extracting: Interest Rates and Pricing
+22:02:12 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+22:02:12 - Pipeline - WARNING - Failed to parse JSON from response
+22:02:13 - Pipeline - WARNING - Low GPU memory (0.72GB free), reducing max_tokens
+22:02:25 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
+22:02:25 - Pipeline - WARNING - Failed to parse JSON from response
+22:02:25 - Pipeline - INFO -     Extracting: Hedging Arrangements
