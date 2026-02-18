@@ -11,3 +11,32 @@ python -c "import torch; print(torch.__version__); print(torch.version.cuda)"
 16:47:05 - Pipeline - INFO -   Config: 4-bit NF4, double quant, sdpa, max 16.0GB
 `torch_dtype` is deprecated! Use `dtype` instead!
 Loading weights:  73%|██████████████████████████████████████████▎               | 323/443 [07:29<01:35,  1.26it/s, Materializing param=model.layers.29.mlp.down_proj.weight]
+
+
+17:16:39 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION (consolidated per company)
+17:16:39 - Pipeline - INFO - ============================================================
+17:16:40 - Pipeline - INFO - Retriever type: embedding
+17:16:40 - Pipeline - INFO - Loading LLM model...
+17:16:40 - Pipeline - INFO - Loading model: /home/inghero/data/irwbds/llm/parc/qwen3_14B
+17:16:40 - Pipeline - INFO - Before model load: GPU Memory: 0.01GB allocated, 0.02GB reserved, 21.05GB free (0.1% used)
+17:16:41 - Pipeline - INFO - Loading LLM from /home/inghero/data/irwbds/llm/parc/qwen3_14B
+17:16:41 - Pipeline - INFO -   Config: 4-bit NF4, double quant, sdpa, max 16.0GB
+`torch_dtype` is deprecated! Use `dtype` instead!
+
+
+
+
+
+============================================================
+17:56:50 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION (consolidated per company)
+17:56:50 - Pipeline - INFO - ============================================================
+17:56:51 - Pipeline - INFO - Retriever type: embedding
+17:56:51 - Pipeline - INFO - Loading LLM model...
+17:56:51 - Pipeline - INFO - Loading model: /home/inghero/data/irwbds/llm/parc/qwen3_14B
+17:56:51 - Pipeline - INFO - Before model load: GPU Memory: 0.01GB allocated, 0.02GB reserved, 21.05GB free (0.1% used)
+17:56:53 - Pipeline - INFO - Loading LLM from /home/inghero/data/irwbds/llm/parc/qwen3_14B
+17:56:53 - Pipeline - INFO -   Detected quantization: none
+17:56:53 - Pipeline - INFO -   Config: 4-bit NF4 (BitsAndBytes), sdpa, max 16.0GB
+`torch_dtype` is deprecated! Use `dtype` instead!
+
+
