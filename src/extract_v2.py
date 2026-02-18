@@ -134,7 +134,7 @@ def initialize_model(model_path: str, use_flash_attention: bool = False):
             )
         else:
             # Original working config — proven on A100 MIG 4g.20gb
-            logger.info(f"  Using original 4-bit config (sdpa attn, no max_memory cap)")
+            logger.info(f"  Using original 4-bit config (eager attn, no max_memory cap)")
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.float16,
@@ -144,7 +144,7 @@ def initialize_model(model_path: str, use_flash_attention: bool = False):
                 device_map="auto",
                 quantization_config=quantization_config,
                 trust_remote_code=True,
-                attn_implementation="sdpa",
+                attn_implementation="eager",
                 low_cpu_mem_usage=True,
             ).to('cuda')
             model.eval()
