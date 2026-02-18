@@ -947,15 +947,16 @@ def extract_with_full_coverage(
                 logger.info(f"      All {found_count} fields found with HIGH confidence, skipping section passes")
 
         # Strategy 2: Process document in sections for full coverage (skip if all found)
+        # Each section pass sends MAX_CHUNKS_PER_FIELD_GROUP chunks to stay within VRAM
         if not all_found:
-            section_size = max(4, len(consolidated.chunks) // 3)  # ~3-4 sections
+            chunk_limit = MAX_CHUNKS_PER_FIELD_GROUP
 
-            for section_start in range(0, len(consolidated.chunks), section_size):
-                section_end = min(section_start + section_size, len(consolidated.chunks))
+            for section_start in range(0, len(consolidated.chunks), chunk_limit):
+                section_end = min(section_start + chunk_limit, len(consolidated.chunks))
                 section_chunks = [c['text'] for c in consolidated.chunks[section_start:section_end]]
 
                 if section_chunks:
-                    # Check if this section content is already covered
+                    # Check if this section content is already covered by BM25 pass
                     section_preview = ' '.join(section_chunks)[:300]
                     already_covered = any(
                         section_preview[:100] in rc for rc in relevant_chunks
