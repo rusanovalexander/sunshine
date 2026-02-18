@@ -565,6 +565,7 @@ def save_quantized_model(model_path: str, output_path: str, max_memory_gb: float
         trust_remote_code=True,
         torch_dtype=torch.float16,
         low_cpu_mem_usage=True,
+        use_safetensors=True,
     )
 
     logger.info("  Saving pre-quantized model...")
@@ -623,6 +624,7 @@ def load_llm_optimized(
             attn_implementation=attn_impl,
             torch_dtype="auto",  # Let the model config decide dtype
             low_cpu_mem_usage=True,
+            use_safetensors=True,
         )
 
     elif quant_type in ("gptq", "awq"):
@@ -637,6 +639,7 @@ def load_llm_optimized(
             attn_implementation=attn_impl,
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
+            use_safetensors=True,
         )
 
     elif quant_type == "bnb4":
@@ -650,6 +653,7 @@ def load_llm_optimized(
             trust_remote_code=True,
             attn_implementation="sdpa",
             low_cpu_mem_usage=True,
+            use_safetensors=True,
         )
 
     else:
@@ -673,6 +677,7 @@ def load_llm_optimized(
             trust_remote_code=True,
             attn_implementation="sdpa",
             low_cpu_mem_usage=True,
+            use_safetensors=True,
         )
 
     # Optimize for inference

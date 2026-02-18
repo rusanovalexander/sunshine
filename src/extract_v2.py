@@ -146,6 +146,7 @@ def initialize_model(model_path: str, use_flash_attention: bool = False):
                 trust_remote_code=True,
                 attn_implementation="sdpa",
                 low_cpu_mem_usage=True,
+                use_safetensors=True,
             )
             model.eval()
 
