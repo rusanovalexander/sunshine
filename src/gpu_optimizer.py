@@ -528,7 +528,10 @@ def _detect_quantization(model_path: str) -> str:
 
 def save_quantized_model(model_path: str, output_path: str, max_memory_gb: float = 18.0):
     """
-    Pre-quantize a model to BitsAndBytes 4-bit NF4 and save to disk.
+    Pre-quantize a model to BitsAndBytes 4-bit and save to disk.
+
+    Uses the same simple 4-bit config as the original working setup:
+    default fp4 quant type, no double quantization.
 
     This is a ONE-TIME operation. After saving, subsequent loads from
     output_path skip on-the-fly quantization — saving ~9GB peak GPU
@@ -544,11 +547,11 @@ def save_quantized_model(model_path: str, output_path: str, max_memory_gb: float
 
     aggressive_memory_cleanup()
 
+    # Simple 4-bit config matching the original working setup:
+    # default fp4 quant type, no double quant, fp16 compute dtype
     quant_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_use_double_quant=True,
     )
 
     max_memory = {0: f"{max_memory_gb}GB", "cpu": "30GB"}
