@@ -641,15 +641,14 @@ def load_llm_optimized(
 
     elif quant_type == "bnb4":
         # ─── Saved BitsAndBytes 4-bit: load directly (no re-quantization) ───
-        # Uses "eager" attention + no max_memory cap — matching the original
-        # proven config that fits on 20GB MIG without hidden memory issues.
-        logger.info(f"  Config: Saved BnB 4-bit (pre-quantized), eager attn, no max_memory cap")
+        # No max_memory cap — let device_map="auto" handle placement.
+        logger.info(f"  Config: Saved BnB 4-bit (pre-quantized), sdpa attn, no max_memory cap")
 
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
             device_map="auto",
             trust_remote_code=True,
-            attn_implementation="eager",
+            attn_implementation="sdpa",
             low_cpu_mem_usage=True,
         ).to('cuda')
 
@@ -664,7 +663,7 @@ def load_llm_optimized(
             bnb_4bit_compute_dtype=torch.float16,
         )
 
-        logger.info(f"  Config: 4-bit (BitsAndBytes on-the-fly), eager attn, no max_memory cap")
+        logger.info(f"  Config: 4-bit (BitsAndBytes on-the-fly), sdpa attn, no max_memory cap")
         logger.info(f"  TIP: Run '--stage quantize' once to pre-quantize for faster loading & less memory")
 
         model = AutoModelForCausalLM.from_pretrained(
@@ -672,7 +671,7 @@ def load_llm_optimized(
             quantization_config=quant_config,
             device_map="auto",
             trust_remote_code=True,
-            attn_implementation="eager",
+            attn_implementation="sdpa",
             low_cpu_mem_usage=True,
         ).to('cuda')
 
