@@ -650,27 +650,25 @@ def load_llm_optimized(
         )
 
     else:
-        # ─── No pre-quantized weights: use BitsAndBytes 4-bit NF4 on-the-fly ───
+        # ─── No pre-quantized weights: use BitsAndBytes 4-bit on-the-fly ───
+        # NOTE: Using simple 4-bit config (no nf4, no double_quant) to match
+        # the original working setup that fit on 20GB MIG.
         from transformers import BitsAndBytesConfig
 
         quant_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
         )
 
-        logger.info(f"  Config: 4-bit NF4 (BitsAndBytes on-the-fly), {attn_impl}, max {max_memory_gb}GB")
+        logger.info(f"  Config: 4-bit (BitsAndBytes on-the-fly), eager attn, no max_memory cap")
         logger.info(f"  TIP: Run '--stage quantize' once to pre-quantize for faster loading & less memory")
 
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
             quantization_config=quant_config,
             device_map="auto",
-            max_memory=max_memory,
             trust_remote_code=True,
-            attn_implementation=attn_impl,
-            torch_dtype=torch.float16,
+            attn_implementation="eager",
             low_cpu_mem_usage=True,
         )
 

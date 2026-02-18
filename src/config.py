@@ -26,7 +26,9 @@ OUTPUT_CSV = "results_project_sunshine_v2.csv"
 # =====================================================================
 CHUNK_SIZE = 2000  # tokens per chunk
 CHUNK_OVERLAP = 400  # overlap between chunks
-MAX_CHUNKS_PER_FIELD_GROUP = 12  # max chunks to send to LLM per extraction (increased from 8 for better recall)
+MAX_CHUNKS_PER_FIELD_GROUP = 5  # max chunks to send to LLM per extraction
+                                # 5 × 3000 = ~15K tokens — fits comfortably in 20GB MIG
+                                # (was 12 = ~36K tokens → KV cache OOM)
 DPI = 300  # for PDF rendering
 
 # Retriever Settings
@@ -35,7 +37,7 @@ EMBEDDING_BATCH_SIZE = 32  # Batch size for encoding chunks during indexing
 HYBRID_BM25_WEIGHT = 0.5  # Weight for BM25 in hybrid mode (embedding gets 1 - this)
 
 # LLM Settings
-MAX_NEW_TOKENS = 4096
+MAX_NEW_TOKENS = 2048  # Reduced from 4096 to fit in 20GB MIG KV cache budget
 TEMPERATURE = 0.1
 TOP_P = 0.95
 REPETITION_PENALTY = 1.1
