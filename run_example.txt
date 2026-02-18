@@ -1,0 +1,6 @@
+python -m src.main \
+  --stage all \
+  --ocr_method easyocr \
+  --retriever embedding \
+  --company "YourCompanyName" \
+  --flash_attention
