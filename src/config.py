@@ -25,7 +25,7 @@ OUTPUT_CSV = "results_project_sunshine_v2.csv"
 # =====================================================================
 CHUNK_SIZE = 2000  # tokens per chunk
 CHUNK_OVERLAP = 400  # overlap between chunks
-MAX_CHUNKS_PER_FIELD_GROUP = 8  # max chunks to send to LLM per extraction
+MAX_CHUNKS_PER_FIELD_GROUP = 12  # max chunks to send to LLM per extraction (increased from 8 for better recall)
 DPI = 300  # for PDF rendering
 
 # LLM Settings
@@ -288,8 +288,28 @@ ALL_FIELDS = [
 ]
 
 # Fields that require extraction (excluding metadata)
-EXTRACTABLE_FIELDS = [f for f in ALL_FIELDS if f not in 
+EXTRACTABLE_FIELDS = [f for f in ALL_FIELDS if f not in
                       ["Client Folder", "Source Files", "Comments", "Confidence Score"]]
+
+# =====================================================================
+# ADAPTIVE MAX_NEW_TOKENS PER FIELD GROUP
+# =====================================================================
+# Groups with fewer/simpler fields need fewer output tokens.
+# This reduces peak KV cache memory and speeds up inference on A100 20GB.
+FIELD_GROUP_MAX_TOKENS = {
+    "basic_info": 2000,
+    "sponsor_info": 1500,
+    "project_details": 1500,
+    "construction_guarantees": 1500,
+    "revenue_mitigants": 2000,
+    "covenants": 3500,       # 12 fields, many sub-values
+    "syndication_ing": 800,  # 3 simple fields
+    "dates_schedules": 2500, # schedules can be verbose
+    "pricing": 1500,
+    "hedging": 2500,         # 8 fields
+    "cash_sweep": 1200,
+    "fees": 800,             # 3 simple fields
+}
 
 # =====================================================================
 # PROMPT TEMPLATES
@@ -301,9 +321,13 @@ Your task is to extract specific information from financial documents with extre
 CRITICAL RULES:
 1. ONLY extract information that is EXPLICITLY stated in the document
 2. For EVERY value you extract, you MUST provide the exact quote from the document as evidence
-3. If information is not found, use "NOT_FOUND" - never guess or infer
-4. Be precise with numbers, dates, percentages - copy them exactly as written
-5. For Yes/No fields, only answer "Yes" or "No" based on explicit document content
+3. If information is clearly not present in the provided text, use "NOT_FOUND"
+4. If the field is likely present in the full document but not in the provided excerpts, use "POSSIBLY_PRESENT" - this tells the system to search harder
+5. Be precise with numbers, dates, percentages - copy them exactly as written
+6. For Yes/No fields, only answer "Yes" or "No" based on explicit document content
+7. Convert dates to MM/YYYY format when possible
+8. Convert basis points to percentages (e.g., 250bps = 2.50%)
+9. For ratios like 1.20:1, output as 1.20x
 
 Output your response as valid JSON."""
 
@@ -335,10 +359,12 @@ Respond with a JSON object in this exact format:
     "notes": "any important observations about the extraction"
 }}
 
-IMPORTANT: 
+IMPORTANT:
 - Evidence must be a direct quote, not a paraphrase
 - If a field has multiple values (e.g., multiple facilities), list them all
-- Confidence is HIGH if explicitly stated, MEDIUM if inferred from context, LOW if uncertain"""
+- Confidence is HIGH if explicitly stated, MEDIUM if inferred from context, LOW if uncertain
+- Use "NOT_FOUND" ONLY when the information genuinely does not exist in this type of document
+- Use "POSSIBLY_PRESENT" when the field likely exists in the full document but is not visible in the provided excerpts (this triggers a deeper search)"""
 
 FACILITY_DETECTION_PROMPT = """Analyze this document and identify ALL distinct credit facilities or tranches.
 

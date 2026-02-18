@@ -43,12 +43,19 @@ from .consolidate import (
 from .config import (
     MODEL_PATH, PREPROCESSED_DATA_DIR, CHUNKS_DIR, EXTRACTION_DIR, OUTPUT_CSV,
     FIELD_GROUPS, ALL_FIELDS, EXTRACTABLE_FIELDS,
-    EXTRACTION_SYSTEM_PROMPT, EXTRACTION_USER_TEMPLATE, 
+    EXTRACTION_SYSTEM_PROMPT, EXTRACTION_USER_TEMPLATE,
     FACILITY_DETECTION_PROMPT, VERIFICATION_PROMPT,
     MAX_NEW_TOKENS, TEMPERATURE, TOP_P, REPETITION_PENALTY,
-    MAX_CHUNKS_PER_FIELD_GROUP
+    MAX_CHUNKS_PER_FIELD_GROUP, FIELD_GROUP_MAX_TOKENS
 )
 from .retriever import BM25Retriever, create_retriever_from_chunks, retrieve_for_field_group
+
+# Few-shot prompting
+try:
+    from examples.few_shot_template import create_enhanced_extraction_prompt
+    FEW_SHOT_AVAILABLE = True
+except ImportError:
+    FEW_SHOT_AVAILABLE = False
 
 # =====================================================================
 # LOGGING
@@ -247,49 +254,60 @@ def detect_facilities(document_text: str, model, tokenizer) -> List[Dict]:
 # FIELD GROUP EXTRACTION
 # =====================================================================
 
-def extract_field_group(group_name: str, group_config: Dict, 
-                       relevant_chunks: List[str], 
+def extract_field_group(group_name: str, group_config: Dict,
+                       relevant_chunks: List[str],
                        facility_context: str,
                        model, tokenizer) -> Dict:
     """
     Extract a single group of fields from relevant chunks.
     Returns structured extraction with evidence.
+
+    Enhanced with:
+    - Per-field-group few-shot examples for better accuracy
+    - Adaptive max_new_tokens to save KV cache memory on A100 20GB
     """
     fields = group_config['fields']
-    
+
     # Build field descriptions
     field_desc = []
     for field_name, field_help in fields:
         field_desc.append(f"- **{field_name}**: {field_help}")
     fields_description = '\n'.join(field_desc)
-    
+
     # Combine relevant chunks
     document_text = '\n\n---\n\n'.join(relevant_chunks)
-    
+
     # Add facility context if we have multiple facilities
     if facility_context:
         document_text = f"[CONTEXT: Extracting data for {facility_context}]\n\n{document_text}"
-    
+
     # Build prompt
     user_prompt = EXTRACTION_USER_TEMPLATE.format(
         fields_description=fields_description,
         document_text=document_text
     )
-    
+
+    # Enhance with per-group few-shot example
+    if FEW_SHOT_AVAILABLE:
+        user_prompt = create_enhanced_extraction_prompt(user_prompt, group_name=group_name)
+
     messages = [
         {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt}
     ]
-    
-    response = llm_generate(messages, model, tokenizer, max_tokens=3000)
+
+    # Use adaptive max_new_tokens per field group to save KV cache memory
+    group_max_tokens = FIELD_GROUP_MAX_TOKENS.get(group_name, MAX_NEW_TOKENS)
+
+    response = llm_generate(messages, model, tokenizer, max_tokens=group_max_tokens)
     result = parse_json_response(response)
-    
+
     if result:
         return result
-    
+
     # Return empty structure if parsing failed
     return {
-        "fields": {name: {"value": "EXTRACTION_ERROR", "evidence": "", "confidence": "LOW"} 
+        "fields": {name: {"value": "EXTRACTION_ERROR", "evidence": "", "confidence": "LOW"}
                   for name, _ in fields},
         "notes": "Failed to parse extraction response"
     }
@@ -434,15 +452,16 @@ def consolidate_facility_data(extractions: Dict, facility_info: Dict) -> Facilit
 def calculate_confidence_score(facility_data: FacilityData) -> float:
     """Calculate overall confidence score for extraction."""
     confidence_weights = {'HIGH': 1.0, 'MEDIUM': 0.6, 'LOW': 0.3}
-    
+    skip_values = {'NOT_FOUND', 'N/A', 'EXTRACTION_ERROR', '', 'POSSIBLY_PRESENT'}
+
     scores = []
     for field_name, field_value in facility_data.fields.items():
-        if field_value.value not in ['NOT_FOUND', 'N/A', 'EXTRACTION_ERROR', '']:
+        if field_value.value not in skip_values:
             scores.append(confidence_weights.get(field_value.confidence, 0.3))
-    
+
     if not scores:
         return 0.0
-    
+
     return sum(scores) / len(scores)
 
 
@@ -527,7 +546,11 @@ def extraction_to_rows(extraction: DocumentExtraction) -> List[Dict]:
         for field_name in EXTRACTABLE_FIELDS:
             if field_name in facility.fields:
                 field_data = facility.fields[field_name]
-                row[field_name] = field_data.value
+                # POSSIBLY_PRESENT means we couldn't find it despite trying — treat as NOT_FOUND in output
+                if field_data.value == 'POSSIBLY_PRESENT':
+                    row[field_name] = "NOT_FOUND"
+                else:
+                    row[field_name] = field_data.value
             else:
                 row[field_name] = "NOT_EXTRACTED"
         
@@ -835,30 +858,41 @@ def extract_with_full_coverage(
 
 
 def merge_field_extractions(results: List[Dict], fields: List[Tuple]) -> Dict:
-    """Merge extraction results from multiple passes."""
+    """Merge extraction results from multiple passes.
+
+    POSSIBLY_PRESENT values are treated as "not yet found" during merging
+    but preserved if no better value exists — this signals deep extraction
+    to try harder for these fields.
+    """
     merged = {"fields": {}, "notes": "Merged from multiple extraction passes"}
-    
+    skip_values = {'NOT_FOUND', 'N/A', '', None, 'POSSIBLY_PRESENT'}
+
     for field_name, _ in fields:
         best_value = None
         best_confidence = 'LOW'
         best_evidence = ''
+        has_possibly_present = False
         conf_rank = {'HIGH': 3, 'MEDIUM': 2, 'LOW': 1}
-        
+
         for result in results:
             if 'fields' not in result:
                 continue
-            
+
             field_data = result['fields'].get(field_name)
             if not field_data or not isinstance(field_data, dict):
                 continue
-            
+
             value = field_data.get('value', 'NOT_FOUND')
             confidence = field_data.get('confidence', 'LOW')
             evidence = field_data.get('evidence', '')
-            
-            if value in ['NOT_FOUND', 'N/A', '', None]:
+
+            if value == 'POSSIBLY_PRESENT':
+                has_possibly_present = True
                 continue
-            
+
+            if value in skip_values:
+                continue
+
             # Keep highest confidence value
             if conf_rank.get(confidence, 0) > conf_rank.get(best_confidence, 0):
                 best_value = value
@@ -870,13 +904,22 @@ def merge_field_extractions(results: List[Dict], fields: List[Tuple]) -> Dict:
                     best_value = value
                     best_confidence = confidence
                     best_evidence = evidence
-        
-        merged["fields"][field_name] = {
-            "value": best_value or "NOT_FOUND",
-            "confidence": best_confidence,
-            "evidence": best_evidence
-        }
-    
+
+        # If no concrete value found but LLM hinted the field exists,
+        # mark as POSSIBLY_PRESENT so deep extraction will target it
+        if best_value is None and has_possibly_present:
+            merged["fields"][field_name] = {
+                "value": "POSSIBLY_PRESENT",
+                "confidence": "LOW",
+                "evidence": ""
+            }
+        else:
+            merged["fields"][field_name] = {
+                "value": best_value or "NOT_FOUND",
+                "confidence": best_confidence,
+                "evidence": best_evidence
+            }
+
     return merged
 
 

@@ -411,8 +411,8 @@ def merge_extraction_results(results: List[Dict], field_groups: Dict) -> Dict:
                 confidence = field_data.get('confidence', 'LOW')
                 evidence = field_data.get('evidence', '')
                 
-                # Skip NOT_FOUND values
-                if value in ['NOT_FOUND', 'N/A', '', None]:
+                # Skip NOT_FOUND / POSSIBLY_PRESENT values
+                if value in ['NOT_FOUND', 'N/A', '', None, 'POSSIBLY_PRESENT']:
                     if field_name not in merged[group_name]['fields']:
                         merged[group_name]['fields'][field_name] = field_data
                     continue

@@ -181,16 +181,21 @@ def find_best_context_for_field(retriever: BM25Retriever,
 # =====================================================================
 
 def deep_extract_field(field_name: str, retriever: BM25Retriever,
-                      model, tokenizer, llm_generate_fn) -> Dict:
+                      model, tokenizer, llm_generate_fn,
+                      full_text: str = None) -> Dict:
     """
     Perform deep extraction for a single field.
-    Uses multiple strategies to maximize recall.
+    Uses multiple strategies to maximize recall:
+    1. BM25 retrieval with multiple strategies
+    2. Table-specific extraction
+    3. Regex pattern pre-matching
+    4. LLM extraction with pattern hints
     """
     from .extract_v2 import parse_json_response
-    
+
     # Get best context
     contexts = find_best_context_for_field(retriever, field_name, top_k=6)
-    
+
     if not contexts:
         return {
             "value": "NOT_FOUND",
@@ -198,44 +203,55 @@ def deep_extract_field(field_name: str, retriever: BM25Retriever,
             "confidence": "LOW",
             "reasoning": "No relevant context found"
         }
-    
+
     # Pre-extraction with patterns
     full_context = '\n\n'.join(contexts)
     pattern_candidates = extract_with_patterns(full_context, field_name)
-    
+
+    # Strategy: Try table extraction (many financial fields live in tables)
+    table_value = None
+    if full_text:
+        table_value = extract_from_tables(full_text, field_name)
+    if not table_value:
+        # Also try table extraction on the retrieved context chunks
+        table_value = extract_from_tables(full_context, field_name)
+
+    if table_value and table_value not in pattern_candidates:
+        pattern_candidates.insert(0, table_value)
+
     # Build prompt with pattern hints
     field_description = get_field_description(field_name)
-    
+
     prompt_context = full_context
     if pattern_candidates:
         prompt_context += f"\n\n[HINT: Possible values found by pattern matching: {', '.join(pattern_candidates[:5])}]"
-    
+
     prompt = SINGLE_FIELD_PROMPT.format(
         field_name=field_name,
         field_description=field_description,
         context=prompt_context[:8000]  # Limit context size
     )
-    
+
     messages = [
         {"role": "system", "content": "You are a precise financial data extractor. Respond only with valid JSON."},
         {"role": "user", "content": prompt}
     ]
-    
+
     response = llm_generate_fn(messages, model, tokenizer, max_tokens=500)
     result = parse_json_response(response)
-    
+
     if result:
         return result
-    
+
     # Fallback: use pattern results if LLM failed
     if pattern_candidates:
         return {
             "value": pattern_candidates[0],
-            "evidence": f"Pattern-matched from document",
+            "evidence": "Pattern-matched from document",
             "confidence": "MEDIUM",
             "reasoning": "Extracted via pattern matching, LLM verification failed"
         }
-    
+
     return {
         "value": "NOT_FOUND",
         "evidence": "",
@@ -246,45 +262,61 @@ def deep_extract_field(field_name: str, retriever: BM25Retriever,
 
 def deep_extract_missing_fields(current_extraction: Dict,
                                retriever: BM25Retriever,
-                               model, tokenizer, 
-                               llm_generate_fn) -> Dict:
+                               model, tokenizer,
+                               llm_generate_fn,
+                               full_text: str = None) -> Dict:
     """
-    Find fields marked as NOT_FOUND and try to extract them again
-    with more targeted approaches.
+    Find fields marked as NOT_FOUND, POSSIBLY_PRESENT, or low-confidence
+    and try to extract them again with more targeted approaches.
+
+    POSSIBLY_PRESENT is a signal from the primary extraction that the
+    field likely exists in the document but wasn't visible in the chunks
+    that were provided. These are prioritized over generic NOT_FOUND.
     """
-    # Find missing/low-confidence fields
+    # Find missing/low-confidence fields, prioritizing POSSIBLY_PRESENT
+    possibly_present_fields = []
     missing_fields = []
-    
+
     for group_name, group_data in current_extraction.items():
         if 'fields' not in group_data:
             continue
-        
+
         for field_name, field_data in group_data['fields'].items():
             if isinstance(field_data, dict):
                 value = field_data.get('value', '')
                 confidence = field_data.get('confidence', 'LOW')
-                
-                if value in ['NOT_FOUND', 'N/A', 'EXTRACTION_ERROR', ''] or confidence == 'LOW':
+
+                if value == 'POSSIBLY_PRESENT':
+                    possibly_present_fields.append((field_name, group_name))
+                elif value in ['NOT_FOUND', 'N/A', 'EXTRACTION_ERROR', ''] or confidence == 'LOW':
                     missing_fields.append((field_name, group_name))
-    
-    if not missing_fields:
+
+    # Process POSSIBLY_PRESENT first (higher chance of success)
+    all_targets = possibly_present_fields + missing_fields
+
+    if not all_targets:
         logger.info("  No missing fields to deep extract")
         return current_extraction
-    
-    logger.info(f"  Deep extracting {len(missing_fields)} missing/low-confidence fields")
-    
+
+    logger.info(f"  Deep extracting {len(all_targets)} fields "
+                f"({len(possibly_present_fields)} POSSIBLY_PRESENT, "
+                f"{len(missing_fields)} NOT_FOUND/LOW)")
+
     # Deep extract each missing field
-    for field_name, group_name in missing_fields:
+    for field_name, group_name in all_targets:
         logger.info(f"    Deep extracting: {field_name}")
-        
-        result = deep_extract_field(field_name, retriever, model, tokenizer, llm_generate_fn)
-        
+
+        result = deep_extract_field(
+            field_name, retriever, model, tokenizer, llm_generate_fn,
+            full_text=full_text
+        )
+
         # Update if we found something better
-        if result.get('value') not in ['NOT_FOUND', 'N/A', '']:
+        if result.get('value') not in ['NOT_FOUND', 'N/A', '', 'POSSIBLY_PRESENT']:
             if group_name in current_extraction and 'fields' in current_extraction[group_name]:
                 current_extraction[group_name]['fields'][field_name] = result
                 logger.info(f"      Found: {result.get('value')[:50]}...")
-    
+
     return current_extraction
 
 

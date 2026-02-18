@@ -213,13 +213,21 @@ def run_extraction(args):
                 
                 retriever = create_retriever_from_chunks(chunks)
                 
+                # Load full text for table extraction in deep extract
+                text_file = os.path.join(PREPROCESSED_DATA_DIR, entry['text_file'])
+                full_text = None
+                if os.path.exists(text_file):
+                    with open(text_file, 'r', encoding='utf-8') as f:
+                        full_text = f.read()
+
                 for facility in extraction.facilities:
                     # Convert to dict for deep extraction
                     raw_extractions = facility.raw_extractions
-                    
-                    # Deep extract
+
+                    # Deep extract (with full_text for table extraction)
                     enhanced_extractions = deep_extract_missing_fields(
-                        raw_extractions, retriever, model, tokenizer, llm_generate
+                        raw_extractions, retriever, model, tokenizer, llm_generate,
+                        full_text=full_text
                     )
                     
                     # Cross-reference check
