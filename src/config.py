@@ -26,9 +26,9 @@ OUTPUT_CSV = "results_project_sunshine_v2.csv"
 # =====================================================================
 CHUNK_SIZE = 2000  # tokens per chunk
 CHUNK_OVERLAP = 400  # overlap between chunks
-MAX_CHUNKS_PER_FIELD_GROUP = 5  # max chunks to send to LLM per extraction
-                                # 5 × 3000 = ~15K tokens — fits comfortably in 20GB MIG
-                                # (was 12 = ~36K tokens → KV cache OOM)
+MAX_CHUNKS_PER_FIELD_GROUP = 3  # max chunks to send to LLM per extraction
+                                # 3 × 3000 = ~9K tokens — fits in 20GB MIG with 10GB model
+                                # (was 5 = ~15K tokens → OOM during generation)
 DPI = 300  # for PDF rendering
 
 # Retriever Settings
@@ -37,7 +37,7 @@ EMBEDDING_BATCH_SIZE = 32  # Batch size for encoding chunks during indexing
 HYBRID_BM25_WEIGHT = 0.5  # Weight for BM25 in hybrid mode (embedding gets 1 - this)
 
 # LLM Settings
-MAX_NEW_TOKENS = 2048  # Reduced from 4096 to fit in 20GB MIG KV cache budget
+MAX_NEW_TOKENS = 1024  # Reduced to fit in 20GB MIG with 10GB model loaded
 TEMPERATURE = 0.1
 TOP_P = 0.95
 REPETITION_PENALTY = 1.1
@@ -305,18 +305,18 @@ EXTRACTABLE_FIELDS = [f for f in ALL_FIELDS if f not in
 # Groups with fewer/simpler fields need fewer output tokens.
 # This reduces peak KV cache memory and speeds up inference on A100 20GB.
 FIELD_GROUP_MAX_TOKENS = {
-    "basic_info": 2000,
-    "sponsor_info": 1500,
-    "project_details": 1500,
-    "construction_guarantees": 1500,
-    "revenue_mitigants": 2000,
-    "covenants": 3500,       # 12 fields, many sub-values
-    "syndication_ing": 800,  # 3 simple fields
-    "dates_schedules": 2500, # schedules can be verbose
-    "pricing": 1500,
-    "hedging": 2500,         # 8 fields
-    "cash_sweep": 1200,
-    "fees": 800,             # 3 simple fields
+    "basic_info": 1024,
+    "sponsor_info": 768,
+    "project_details": 768,
+    "construction_guarantees": 768,
+    "revenue_mitigants": 1024,
+    "covenants": 1536,       # 12 fields, many sub-values
+    "syndication_ing": 512,  # 3 simple fields
+    "dates_schedules": 1024, # schedules can be verbose
+    "pricing": 768,
+    "hedging": 1024,         # 8 fields
+    "cash_sweep": 768,
+    "fees": 512,             # 3 simple fields
 }
 
 # =====================================================================

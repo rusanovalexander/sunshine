@@ -164,67 +164,95 @@ def initialize_model(model_path: str, use_flash_attention: bool = False):
         return None, None
 
 
-def llm_generate(prompt_messages: List[Dict], model, tokenizer, 
+def llm_generate(prompt_messages: List[Dict], model, tokenizer,
                  max_tokens: int = MAX_NEW_TOKENS) -> str:
     """Generate LLM response with memory-efficient settings."""
     try:
         text = tokenizer.apply_chat_template(
-            prompt_messages, 
-            tokenize=False, 
+            prompt_messages,
+            tokenize=False,
             add_generation_prompt=True,
             enable_thinking=False
         )
-        
+
         inputs = tokenizer(text, return_tensors="pt").to(model.device)
-        
-        # Get memory-efficient generation kwargs
+        input_len = inputs.input_ids.shape[1]
+
+        # Log input size for debugging memory issues
+        logger.info(f"  LLM input: {input_len} tokens, max_new_tokens={max_tokens}")
+
+        # Dynamically cap max_new_tokens based on available memory
+        stats = get_gpu_memory_stats()
+        if stats:
+            if stats.free_gb < 2.0:
+                logger.warning(f"Very low GPU memory ({stats.free_gb:.2f}GB free), reducing to 256 tokens")
+                max_tokens = min(max_tokens, 256)
+                aggressive_memory_cleanup()
+            elif stats.free_gb < 4.0:
+                logger.warning(f"Low GPU memory ({stats.free_gb:.2f}GB free), reducing to 512 tokens")
+                max_tokens = min(max_tokens, 512)
+            elif stats.free_gb < 6.0:
+                max_tokens = min(max_tokens, 1024)
+
+        # Truncate input if too long for available memory
+        # Rule of thumb: need ~0.5GB per 1K input tokens for KV cache on 14B model
+        max_safe_input = 8000  # tokens — safe for ~11GB free VRAM
+        if input_len > max_safe_input:
+            logger.warning(f"Input too long ({input_len} tokens), truncating to {max_safe_input}")
+            inputs = tokenizer(text, return_tensors="pt", max_length=max_safe_input, truncation=True).to(model.device)
+            input_len = inputs.input_ids.shape[1]
+
         gen_kwargs = get_memory_efficient_generation_kwargs()
         gen_kwargs["max_new_tokens"] = max_tokens
         gen_kwargs["pad_token_id"] = tokenizer.pad_token_id
-        
-        # Check available memory and adjust if needed
-        stats = get_gpu_memory_stats()
-        if stats and stats.free_gb < 3.0:
-            logger.warning(f"Low GPU memory ({stats.free_gb:.2f}GB free), reducing max_tokens")
-            gen_kwargs["max_new_tokens"] = min(max_tokens, 1024)
-            aggressive_memory_cleanup()
-        
+
         with torch.no_grad():
             outputs = model.generate(**inputs, **gen_kwargs)
-        
+
         response = tokenizer.decode(
-            outputs[0][inputs.input_ids.shape[1]:], 
+            outputs[0][input_len:],
             skip_special_tokens=True
         ).strip()
-        
+
         # Cleanup
         del inputs, outputs
         torch.cuda.empty_cache()
-        
+
         return response
-    except torch.cuda.OutOfMemoryError:
-        logger.error("OOM during generation, attempting recovery...")
-        aggressive_memory_cleanup()
-        
-        # Retry with minimal tokens
-        try:
-            inputs = tokenizer(text, return_tensors="pt").to(model.device)
-            with torch.no_grad():
-                outputs = model.generate(
-                    **inputs, max_new_tokens=512, do_sample=False,
-                    pad_token_id=tokenizer.pad_token_id
-                )
-            response = tokenizer.decode(
-                outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True
-            ).strip()
-            del inputs, outputs
-            torch.cuda.empty_cache()
-            return response
-        except Exception as e:
-            logger.error(f"Recovery failed: {e}")
-            return ""
     except Exception as e:
-        logger.error(f"LLM generation error: {e}")
+        # Catch ALL errors including NVML assertion failures (not just torch.cuda.OutOfMemoryError)
+        error_str = str(e)
+        is_oom = "NVML_SUCCESS" in error_str or "out of memory" in error_str.lower() or isinstance(e, torch.cuda.OutOfMemoryError)
+
+        if is_oom:
+            logger.error(f"GPU OOM during generation ({input_len} input tokens), attempting recovery...")
+        else:
+            logger.error(f"LLM generation error: {e}")
+
+        aggressive_memory_cleanup()
+
+        if is_oom:
+            # Retry with drastically reduced tokens
+            try:
+                inputs = tokenizer(text, return_tensors="pt", max_length=4000, truncation=True).to(model.device)
+                retry_len = inputs.input_ids.shape[1]
+                logger.info(f"  Retry with {retry_len} input tokens, 256 max_new_tokens")
+                with torch.no_grad():
+                    outputs = model.generate(
+                        **inputs, max_new_tokens=256, do_sample=False,
+                        pad_token_id=tokenizer.pad_token_id
+                    )
+                response = tokenizer.decode(
+                    outputs[0][retry_len:], skip_special_tokens=True
+                ).strip()
+                del inputs, outputs
+                torch.cuda.empty_cache()
+                return response
+            except Exception as e2:
+                logger.error(f"Recovery failed: {e2}")
+                aggressive_memory_cleanup()
+                return ""
+
         return ""
 
 
