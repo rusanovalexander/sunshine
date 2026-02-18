@@ -650,7 +650,7 @@ def load_llm_optimized(
             trust_remote_code=True,
             attn_implementation="sdpa",
             low_cpu_mem_usage=True,
-        ).to('cuda')
+        )
 
     else:
         # ─── No pre-quantized weights: use BitsAndBytes 4-bit on-the-fly ───
@@ -673,7 +673,7 @@ def load_llm_optimized(
             trust_remote_code=True,
             attn_implementation="sdpa",
             low_cpu_mem_usage=True,
-        ).to('cuda')
+        )
 
     # Optimize for inference
     model.eval()
