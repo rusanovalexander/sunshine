@@ -10,7 +10,7 @@ import os
 # =====================================================================
 # PATHS
 # =====================================================================
-MODEL_PATH = "/home/inghero/data/irwbds/llm/parc/qwen3_14B"
+MODEL_PATH = "/home/inghero/data/irwbds/llm/parc/qwen3_14B_bnb4"
 VLM_MODEL_PATH = "/home/inghero/data/irwbds/llm/parc/Qwen2.5-VL-3B-Instruct"
 EMBEDDING_MODEL_PATH = "/home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B"
 
