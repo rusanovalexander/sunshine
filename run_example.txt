@@ -1,6 +1,5 @@
 (virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_4/sunshine-master$ python -m src.main   --stage all   --ocr_method easyocr   --retriever embedding   --company "ABP Acquisitions UK Limited_39306327" --skip_preprocess
 
-
     ╔═══════════════════════════════════════════════════════════════╗
     ║     PROJECT SUNSHINE - Document Extraction Pipeline v2        ║
     ║     Multi-Pass Evidence-Based Extraction System               ║
@@ -11,107 +10,64 @@
     ║  Stage 4: Verification & Consolidation                        ║
     ╚═══════════════════════════════════════════════════════════════╝
     
-21:51:10 - Pipeline - INFO - Checking environment...
-21:51:10 - Pipeline - INFO -   GPU: NVIDIA A100-PCIE-40GB MIG 4g.20gb (21.1 GB)
-21:51:11 - Pipeline - INFO -   GPU Memory: 21.1GB free / 21.1GB total
-21:51:14 - Pipeline - INFO -   All required packages available
-21:51:14 - Pipeline - INFO - Checking paths...
-21:51:14 - Pipeline - INFO -   LLM model: OK
-21:51:14 - Pipeline - INFO -   VLM model: OK
-21:51:14 - Pipeline - INFO -   Source data: OK
-21:51:14 - Pipeline - INFO - Skipping preprocessing (--skip_preprocess)
-21:51:14 - Pipeline - INFO - 
+22:14:40 - Pipeline - INFO - Checking environment...
+22:14:40 - Pipeline - INFO -   GPU: NVIDIA A100-PCIE-40GB MIG 4g.20gb (21.1 GB)
+22:14:40 - Pipeline - INFO -   GPU Memory: 21.1GB free / 21.1GB total
+22:14:42 - Pipeline - INFO -   All required packages available
+22:14:42 - Pipeline - INFO - Checking paths...
+22:14:42 - Pipeline - INFO -   LLM model: OK
+22:14:43 - Pipeline - INFO -   VLM model: OK
+22:14:43 - Pipeline - INFO -   Source data: OK
+22:14:43 - Pipeline - INFO - Skipping preprocessing (--skip_preprocess)
+22:14:43 - Pipeline - INFO - 
 ============================================================
-21:51:14 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION (consolidated per company)
-21:51:14 - Pipeline - INFO - ============================================================
-21:52:04 - Pipeline - INFO - Retriever type: embedding
-21:52:04 - Pipeline - INFO - Loading LLM model...
-21:52:04 - Pipeline - INFO - Loading model: /home/inghero/data/irwbds/llm/parc/qwen3_14B_bnb4
-21:52:04 - Pipeline - INFO - Before model load: GPU Memory: 0.00GB allocated, 0.00GB reserved, 21.07GB free (0.0% used)
-21:52:04 - Pipeline - INFO -   Pre-quantized model detected (bnb4), using optimized loader
-21:52:06 - Pipeline - INFO - Loading LLM from /home/inghero/data/irwbds/llm/parc/qwen3_14B_bnb4
-21:52:06 - Pipeline - INFO -   Detected quantization: bnb4
-21:52:06 - Pipeline - INFO -   Config: Saved BnB 4-bit (pre-quantized), sdpa attn, no max_memory cap
-Loading weights: 100%|████████████████████████████████████████████████████████████████████████████| 443/443 [02:09<00:00,  3.43it/s, Materializing param=model.norm.weight]
-21:57:30 - Pipeline - INFO -   ✓ Chat template available
-21:57:30 - Pipeline - INFO - After LLM load: GPU Memory: 9.93GB allocated, 9.96GB reserved, 11.12GB free (47.2% used)
-21:57:30 - Pipeline - INFO - Model loaded successfully
-21:57:30 - Pipeline - INFO - After model load: GPU Memory: 9.93GB allocated, 9.96GB reserved, 11.12GB free (47.2% used)
-21:57:30 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B...
-21:57:30 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B
+22:14:43 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION (consolidated per company)
+22:14:43 - Pipeline - INFO - ============================================================
+22:14:53 - Pipeline - INFO - Retriever type: embedding
+22:14:53 - Pipeline - INFO - Loading LLM model...
+22:14:53 - Pipeline - INFO - Loading model: /home/inghero/data/irwbds/llm/parc/qwen3_14B_bnb4
+22:14:53 - Pipeline - INFO - Before model load: GPU Memory: 0.00GB allocated, 0.00GB reserved, 21.07GB free (0.0% used)
+22:14:53 - Pipeline - INFO -   Pre-quantized model detected (bnb4), using optimized loader
+22:14:54 - Pipeline - INFO - Loading LLM from /home/inghero/data/irwbds/llm/parc/qwen3_14B_bnb4
+22:14:54 - Pipeline - INFO -   Detected quantization: bnb4
+22:14:54 - Pipeline - INFO -   Config: Saved BnB 4-bit (pre-quantized), sdpa attn, no max_memory cap
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████| 443/443 [02:04<00:00,  3.54it/s, Materializing param=model.norm.weight]
+22:19:13 - Pipeline - INFO -   ✓ Chat template available
+22:19:13 - Pipeline - INFO - After LLM load: GPU Memory: 9.93GB allocated, 9.96GB reserved, 11.12GB free (47.2% used)
+22:19:13 - Pipeline - INFO - Model loaded successfully
+22:19:13 - Pipeline - INFO - After model load: GPU Memory: 9.93GB allocated, 9.96GB reserved, 11.12GB free (47.2% used)
+22:19:13 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B...
+22:19:13 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B
 `torch_dtype` is deprecated! Use `dtype` instead!
-Loading weights: 100%|██████████████████████████████████████████████████████████████████████████████████| 310/310 [00:15<00:00, 19.60it/s, Materializing param=norm.weight]
-21:57:58 - Pipeline - INFO -   Embedding model loaded on cuda
-21:57:58 - Pipeline - INFO - Processing 1 companies (3 files total)
-21:57:58 - Pipeline - INFO - 
+Loading weights: 100%|██████████████████████████████████████████████████████████████████████████████████| 310/310 [00:14<00:00, 20.69it/s, Materializing param=norm.weight]
+22:19:41 - Pipeline - INFO -   Embedding model loaded on cuda
+22:19:41 - Pipeline - INFO - Processing 1 companies (3 files total)
+22:19:41 - Pipeline - INFO - 
 ════════════════════════════════════════════════════════════
-21:57:58 - Pipeline - INFO - Company 1/1: ABP Acquisitions UK Limited_39306327 (3 files)
-21:57:58 - Pipeline - INFO - ════════════════════════════════════════════════════════════
-21:57:58 - Pipeline - INFO -   Step 1: Consolidating all files...
-21:57:58 - Pipeline - INFO - Consolidating 3 files for ABP Acquisitions UK Limited_39306327
-21:57:59 - Pipeline - INFO -   Combined document: 304,718 chars, ~75,754 tokens
-21:57:59 - Pipeline - INFO -   Source files: 3
-21:57:59 - Pipeline - INFO -   Creating chunks: 75754 tokens, size=3000, overlap=500
-21:57:59 - Pipeline - INFO -   Created 31 chunks covering entire document
-21:57:59 - Pipeline - INFO -   ✓ Complete coverage verified: 100.00%
-21:57:59 - Pipeline - INFO -   Consolidated: 75,754 tokens, 31 chunks from 3 files
-21:58:00 - Pipeline - INFO -   Saved consolidated document to extraction_outputs_v2/ABP Acquisitions UK Limited_39306327
-21:58:00 - Pipeline - INFO -   Encoding 31 chunks with embedding model...
-21:58:01 - Pipeline - INFO -   Indexed 31 chunks → embeddings shape torch.Size([31, 1024])
-21:58:02 - Pipeline - INFO -   Embedding model offloaded to CPU (GPU freed for LLM)
-21:58:02 - Pipeline - INFO -   Step 2: Detecting facilities...
-21:58:37 - Pipeline - INFO - Detected 3 facilities
-21:58:37 - Pipeline - INFO -   Found 3 facilities
-21:58:37 - Pipeline - INFO -   Step 3.1: Extracting for Term Loan C (Term Loan)
-21:58:37 - Pipeline - INFO -     Extracting: Basic Facility Information
-21:58:51 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-21:58:51 - Pipeline - WARNING - Failed to parse JSON from response
-21:58:51 - Pipeline - WARNING - Low GPU memory (0.72GB free), reducing max_tokens
-21:59:02 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-21:59:02 - Pipeline - WARNING - Failed to parse JSON from response
-21:59:03 - Pipeline - INFO -     Extracting: Sponsor and Ownership
-21:59:17 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-21:59:17 - Pipeline - WARNING - Failed to parse JSON from response
-21:59:17 - Pipeline - WARNING - Low GPU memory (0.72GB free), reducing max_tokens
-21:59:30 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-21:59:30 - Pipeline - WARNING - Failed to parse JSON from response
-21:59:30 - Pipeline - WARNING - Low GPU memory (1.41GB free), reducing max_tokens
-21:59:43 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-21:59:43 - Pipeline - WARNING - Failed to parse JSON from response
-21:59:43 - Pipeline - INFO -     Extracting: Project Details
-21:59:57 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-21:59:57 - Pipeline - WARNING - Failed to parse JSON from response
-21:59:57 - Pipeline - WARNING - Low GPU memory (0.72GB free), reducing max_tokens
-22:00:08 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-22:00:08 - Pipeline - WARNING - Failed to parse JSON from response
-22:00:08 - Pipeline - INFO -     Extracting: Construction and Guarantees
-22:00:22 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-22:00:22 - Pipeline - WARNING - Failed to parse JSON from response
-22:00:22 - Pipeline - WARNING - Low GPU memory (0.72GB free), reducing max_tokens
-22:00:34 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-22:00:34 - Pipeline - WARNING - Failed to parse JSON from response
-22:00:34 - Pipeline - INFO -     Extracting: Revenue Mitigating Factors
-22:00:50 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-22:00:50 - Pipeline - WARNING - Failed to parse JSON from response
-22:00:51 - Pipeline - INFO -     Extracting: Financial Covenants
-22:01:06 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-22:01:06 - Pipeline - WARNING - Failed to parse JSON from response
-22:01:06 - Pipeline - INFO -     Extracting: Syndication and ING Participation
-22:01:20 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-22:01:20 - Pipeline - WARNING - Failed to parse JSON from response
-22:01:20 - Pipeline - WARNING - Low GPU memory (0.74GB free), reducing max_tokens
-22:01:32 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-22:01:32 - Pipeline - WARNING - Failed to parse JSON from response
-22:01:32 - Pipeline - WARNING - Low GPU memory (0.81GB free), reducing max_tokens
-22:01:43 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-22:01:43 - Pipeline - WARNING - Failed to parse JSON from response
-22:01:43 - Pipeline - INFO -     Extracting: Dates and Schedules
-22:01:58 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-22:01:58 - Pipeline - WARNING - Failed to parse JSON from response
-22:01:58 - Pipeline - INFO -     Extracting: Interest Rates and Pricing
-22:02:12 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-22:02:12 - Pipeline - WARNING - Failed to parse JSON from response
-22:02:13 - Pipeline - WARNING - Low GPU memory (0.72GB free), reducing max_tokens
-22:02:25 - Pipeline - ERROR - LLM generation error: NVML_SUCCESS == r INTERNAL ASSERT FAILED at "/pytorch/c10/cuda/CUDACachingAllocator.cpp":1154, please report a bug to PyTorch. 
-22:02:25 - Pipeline - WARNING - Failed to parse JSON from response
-22:02:25 - Pipeline - INFO -     Extracting: Hedging Arrangements
+22:19:41 - Pipeline - INFO - Company 1/1: ABP Acquisitions UK Limited_39306327 (3 files)
+22:19:41 - Pipeline - INFO - ════════════════════════════════════════════════════════════
+22:19:41 - Pipeline - INFO -   Step 1: Consolidating all files...
+22:19:41 - Pipeline - INFO - Consolidating 3 files for ABP Acquisitions UK Limited_39306327
+22:19:42 - Pipeline - INFO -   Combined document: 304,718 chars, ~75,754 tokens
+22:19:42 - Pipeline - INFO -   Source files: 3
+22:19:42 - Pipeline - INFO -   Creating chunks: 75754 tokens, size=3000, overlap=500
+22:19:42 - Pipeline - INFO -   Created 31 chunks covering entire document
+22:19:42 - Pipeline - INFO -   ✓ Complete coverage verified: 100.00%
+22:19:42 - Pipeline - INFO -   Consolidated: 75,754 tokens, 31 chunks from 3 files
+22:19:43 - Pipeline - INFO -   Saved consolidated document to extraction_outputs_v2/ABP Acquisitions UK Limited_39306327
+22:19:43 - Pipeline - INFO -   Encoding 31 chunks with embedding model...
+22:19:44 - Pipeline - INFO -   Indexed 31 chunks → embeddings shape torch.Size([31, 1024])
+22:19:45 - Pipeline - INFO -   Embedding model offloaded to CPU (GPU freed for LLM)
+22:19:45 - Pipeline - INFO -   Step 2: Detecting facilities...
+22:19:48 - Pipeline - INFO -   LLM input: 4046 tokens, max_new_tokens=2048
+22:20:19 - Pipeline - INFO - Detected 3 facilities
+22:20:19 - Pipeline - INFO -   Found 3 facilities
+22:20:19 - Pipeline - INFO -   Step 3.1: Extracting for Term Loan C (Term Loan)
+22:20:19 - Pipeline - INFO -     Extracting: Basic Facility Information
+22:20:23 - Pipeline - INFO -   LLM input: 9621 tokens, max_new_tokens=1024
+22:20:23 - Pipeline - WARNING - Input too long (9621 tokens), truncating to 8000
+22:21:17 - Pipeline - INFO -   LLM input: 9621 tokens, max_new_tokens=1024
+22:21:17 - Pipeline - WARNING - Input too long (9621 tokens), truncating to 8000
+22:23:15 - Pipeline - WARNING - Failed to parse JSON from response
+22:23:15 - Pipeline - INFO -   LLM input: 9621 tokens, max_new_tokens=1024
+22:23:15 - Pipeline - WARNING - Input too long (9621 tokens), truncating to 8000
