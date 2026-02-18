@@ -8,3 +8,6 @@ python -m src.main \
 
 python -c "import torch; print(torch.__version__); print(torch.version.cuda)"
 
+16:47:05 - Pipeline - INFO -   Config: 4-bit NF4, double quant, sdpa, max 16.0GB
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:  73%|██████████████████████████████████████████▎               | 323/443 [07:29<01:35,  1.26it/s, Materializing param=model.layers.29.mlp.down_proj.weight]
