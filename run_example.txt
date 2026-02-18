@@ -4,3 +4,7 @@ python -m src.main \
   --retriever embedding \
   --company "YourCompanyName" \
   --flash_attention
+
+
+python -c "import torch; print(torch.__version__); print(torch.version.cuda)"
+
