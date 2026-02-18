@@ -409,9 +409,9 @@ def main():
     )
     parser.add_argument(
         "--stage",
-        choices=['all', 'preprocess', 'extract', 'report', 'compare'],
+        choices=['all', 'preprocess', 'extract', 'report', 'compare', 'quantize'],
         default='all',
-        help="Which stage to run (use 'compare' for golden record comparison)"
+        help="Which stage to run ('quantize' = pre-quantize model for faster loading)"
     )
     parser.add_argument(
         "--ocr_method",
@@ -452,6 +452,11 @@ def main():
         "--extracted_csv",
         help="Path to extracted CSV to compare against golden record (defaults to pipeline output)"
     )
+    parser.add_argument(
+        "--quantized_model_path",
+        default=None,
+        help="Output path for pre-quantized model (used with --stage quantize)"
+    )
     
     args = parser.parse_args()
     
@@ -489,6 +494,19 @@ def main():
                 logger.error("--golden_csv is required for 'compare' stage")
                 return 1
             run_quality_comparison(args)
+
+        if args.stage == 'quantize':
+            from .config import MODEL_PATH
+            from .gpu_optimizer import save_quantized_model
+            output_path = args.quantized_model_path
+            if not output_path:
+                # Default: save next to original model
+                output_path = MODEL_PATH.rstrip('/') + '_bnb4'
+            logger.info(f"Pre-quantizing model to: {output_path}")
+            save_quantized_model(MODEL_PATH, output_path)
+            logger.info(f"\nDone! Update MODEL_PATH in src/config.py to:")
+            logger.info(f"  MODEL_PATH = \"{output_path}\"")
+            return 0
         
     except KeyboardInterrupt:
         logger.warning("\nPipeline interrupted by user")

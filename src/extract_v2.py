@@ -118,7 +118,9 @@ def initialize_model(model_path: str, use_flash_attention: bool = False):
         model, tokenizer = load_llm_optimized(
             model_path,
             use_flash_attention=use_flash_attention,
-            max_memory_gb=14.0  # Leave ~7GB headroom for KV cache on 21GB MIG
+            max_memory_gb=10.0  # BnB hidden buffers use ~9GB beyond PyTorch-reported;
+                                # cap at 10GB so total real usage ≈ 16-17GB, leaving
+                                # ~3-4GB for KV cache on 20GB MIG
         )
         
         logger.info("Model loaded successfully")
