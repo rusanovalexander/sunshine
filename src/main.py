@@ -155,9 +155,14 @@ def run_preprocessing(args):
 
 
 def run_extraction(args):
-    """Stage 2-4: Multi-pass extraction with deep fallback."""
+    """Stage 2-4: Multi-pass extraction with deep fallback.
+
+    Groups ALL files per company into a single consolidated document
+    before extraction — ensures facilities spread across multiple
+    files are not missed.
+    """
     logger.info("\n" + "="*60)
-    logger.info("STAGE 2-4: MULTI-PASS EXTRACTION")
+    logger.info("STAGE 2-4: MULTI-PASS EXTRACTION (consolidated per company)")
     logger.info("="*60)
 
     from .config import (
@@ -165,10 +170,11 @@ def run_extraction(args):
         EMBEDDING_MODEL_PATH, RETRIEVER_TYPE
     )
     from .extract_v2 import (
-        initialize_model, process_document, extraction_to_rows,
+        initialize_model, process_company_consolidated, extraction_to_rows,
         save_detailed_extraction, llm_generate
     )
     from .deep_extract import deep_extract_missing_fields, cross_reference_fields
+    from .consolidate import get_all_companies, consolidate_company_documents
     from .retriever import create_retriever_from_chunks, load_embedding_model
     import pandas as pd
 
@@ -204,20 +210,23 @@ def run_extraction(args):
     if args.company:
         manifest = [m for m in manifest if m['company'] == args.company]
 
-    logger.info(f"Processing {len(manifest)} documents")
+    # Group manifest entries by company
+    companies = get_all_companies(manifest)
+    logger.info(f"Processing {len(companies)} companies ({len(manifest)} files total)")
 
     os.makedirs(EXTRACTION_DIR, exist_ok=True)
     all_rows = []
 
-    for i, entry in enumerate(manifest):
-        logger.info(f"\n{'─'*60}")
-        logger.info(f"Document {i+1}/{len(manifest)}: {entry['company']} - {entry['original_file']}")
-        logger.info(f"{'─'*60}")
+    for ci, company in enumerate(companies):
+        company_manifest = [m for m in manifest if m['company'] == company]
+        logger.info(f"\n{'═'*60}")
+        logger.info(f"Company {ci+1}/{len(companies)}: {company} ({len(company_manifest)} files)")
+        logger.info(f"{'═'*60}")
 
         try:
-            # Stage 2-3: Primary extraction
-            extraction = process_document(
-                entry['company'], entry, model, tokenizer,
+            # Stage 2-3: Consolidated extraction (merges ALL files for this company)
+            extraction = process_company_consolidated(
+                company, company_manifest, model, tokenizer,
                 retriever_type=retriever_type,
                 embedding_model=embedding_model,
                 embedding_tokenizer=embedding_tokenizer
@@ -227,73 +236,66 @@ def run_extraction(args):
                 # Stage 3.5: Deep extraction for missing fields
                 logger.info("  Running deep extraction for missing fields...")
 
-                chunks_file = os.path.join(CHUNKS_DIR, entry['chunks_file'])
-                with open(chunks_file, 'r') as f:
-                    chunks = json.load(f)
-
-                retriever = create_retriever_from_chunks(
-                    chunks, retriever_type=retriever_type,
-                    embedding_model=embedding_model,
-                    embedding_tokenizer=embedding_tokenizer
+                # Rebuild consolidated chunks for deep extraction
+                consolidated = consolidate_company_documents(
+                    company, company_manifest, PREPROCESSED_DATA_DIR, tokenizer
                 )
-                
-                # Load full text for table extraction in deep extract
-                text_file = os.path.join(PREPROCESSED_DATA_DIR, entry['text_file'])
-                full_text = None
-                if os.path.exists(text_file):
-                    with open(text_file, 'r', encoding='utf-8') as f:
-                        full_text = f.read()
 
-                for facility in extraction.facilities:
-                    # Convert to dict for deep extraction
-                    raw_extractions = facility.raw_extractions
-
-                    # Deep extract (with full_text for table extraction)
-                    enhanced_extractions = deep_extract_missing_fields(
-                        raw_extractions, retriever, model, tokenizer, llm_generate,
-                        full_text=full_text
+                if consolidated and consolidated.chunks:
+                    retriever = create_retriever_from_chunks(
+                        consolidated.chunks, retriever_type=retriever_type,
+                        embedding_model=embedding_model,
+                        embedding_tokenizer=embedding_tokenizer
                     )
-                    
-                    # Cross-reference check
-                    consistency = cross_reference_fields(enhanced_extractions)
-                    if consistency.get('consistency_issues'):
-                        logger.warning(f"    Consistency issues: {consistency['consistency_issues']}")
-                    
-                    # Update facility with enhanced data
-                    facility.raw_extractions = enhanced_extractions
-                    
-                    # Update fields
+                    full_text = consolidated.full_text
+
                     from .extract_v2 import ExtractedValue
-                    for group_name, group_data in enhanced_extractions.items():
-                        if 'fields' not in group_data:
-                            continue
-                        for field_name, field_data in group_data['fields'].items():
-                            if isinstance(field_data, dict):
-                                facility.fields[field_name] = ExtractedValue(
-                                    value=field_data.get('value', 'NOT_FOUND'),
-                                    evidence=field_data.get('evidence', ''),
-                                    confidence=field_data.get('confidence', 'LOW')
-                                )
-                
+                    for facility in extraction.facilities:
+                        raw_extractions = facility.raw_extractions
+
+                        enhanced_extractions = deep_extract_missing_fields(
+                            raw_extractions, retriever, model, tokenizer, llm_generate,
+                            full_text=full_text
+                        )
+
+                        # Cross-reference check
+                        consistency = cross_reference_fields(enhanced_extractions)
+                        if consistency.get('consistency_issues'):
+                            logger.warning(f"    Consistency issues: {consistency['consistency_issues']}")
+
+                        # Update facility with enhanced data
+                        facility.raw_extractions = enhanced_extractions
+
+                        for group_name, group_data in enhanced_extractions.items():
+                            if 'fields' not in group_data:
+                                continue
+                            for field_name, field_data in group_data['fields'].items():
+                                if isinstance(field_data, dict):
+                                    facility.fields[field_name] = ExtractedValue(
+                                        value=field_data.get('value', 'NOT_FOUND'),
+                                        evidence=field_data.get('evidence', ''),
+                                        confidence=field_data.get('confidence', 'LOW')
+                                    )
+
                 # Save detailed extraction
                 save_detailed_extraction(extraction, EXTRACTION_DIR)
-                
+
                 # Convert to rows
                 rows = extraction_to_rows(extraction)
                 all_rows.extend(rows)
-                
-                logger.info(f"  ✓ Extracted {len(extraction.facilities)} facilities")
+
+                logger.info(f"  ✓ Extracted {len(extraction.facilities)} facilities from {len(company_manifest)} files")
             else:
-                logger.warning(f"  ✗ No data extracted")
-        
+                logger.warning(f"  ✗ No data extracted for {company}")
+
         except Exception as e:
-            logger.error(f"  ✗ Failed: {e}", exc_info=True)
-        
-        # Memory cleanup
+            logger.error(f"  ✗ Failed for {company}: {e}", exc_info=True)
+
+        # Memory cleanup between companies
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-    
+
     # Save final CSV
     if all_rows:
         from .config import ALL_FIELDS
@@ -302,9 +304,10 @@ def run_extraction(args):
         extra_cols = [c for c in df.columns if c not in ordered_cols]
         df = df[ordered_cols + extra_cols]
         df.to_csv(OUTPUT_CSV, index=False, encoding='utf-8')
-        
+
         logger.info(f"\n{'='*60}")
         logger.info(f"SUCCESS: Saved {len(df)} rows to {OUTPUT_CSV}")
+        logger.info(f"Companies: {len(companies)}, Facilities: {len(df)}")
         logger.info(f"Detailed extractions: {EXTRACTION_DIR}/")
         logger.info(f"{'='*60}")
         return True
