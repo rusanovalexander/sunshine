@@ -116,9 +116,9 @@ def initialize_model(model_path: str, use_flash_attention: bool = False):
     
     try:
         model, tokenizer = load_llm_optimized(
-            model_path, 
+            model_path,
             use_flash_attention=use_flash_attention,
-            max_memory_gb=16.0  # Leave headroom for KV cache
+            max_memory_gb=14.0  # Leave ~7GB headroom for KV cache on 21GB MIG
         )
         
         logger.info("Model loaded successfully")

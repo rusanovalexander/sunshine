@@ -273,8 +273,11 @@ class EmbeddingRetriever:
     Encodes all document chunks into dense vectors during index(),
     then retrieves via cosine similarity during search().
 
-    The model is loaded in fp16 (~1.2GB VRAM) and kept on GPU
-    alongside the main Qwen3-14B LLM.
+    Memory strategy:
+    - During index(): model stays on its current device (GPU) for fast batch encoding
+    - After index(): model is moved to CPU to free GPU VRAM for the main LLM
+    - During search(): query encoding runs on CPU (single query — negligible cost),
+      cosine similarity runs on CPU (31 chunks × 1024 dim — instant)
     """
 
     def __init__(self, model=None, tokenizer=None, batch_size: int = 32,
@@ -284,10 +287,10 @@ class EmbeddingRetriever:
         self.batch_size = batch_size
         self.device = device
         self.documents = []
-        self.doc_embeddings = None  # (num_docs, embed_dim) tensor
+        self.doc_embeddings = None  # (num_docs, embed_dim) tensor on CPU
 
     def index(self, documents: List[str]):
-        """Encode all documents into embeddings."""
+        """Encode all documents into embeddings, then offload model to CPU."""
         import torch
 
         if self.model is None:
@@ -306,20 +309,37 @@ class EmbeddingRetriever:
         for i in range(0, len(documents), self.batch_size):
             batch = documents[i:i + self.batch_size]
             embs = self._encode(batch)
-            all_embeddings.append(embs)
+            all_embeddings.append(embs.cpu())  # Move each batch to CPU immediately
 
-        # Concatenate and normalize
+        # Concatenate and normalize (all on CPU)
         self.doc_embeddings = torch.cat(all_embeddings, dim=0)
         self.doc_embeddings = torch.nn.functional.normalize(self.doc_embeddings, p=2, dim=1)
 
-        # Store on CPU to save GPU memory; move to GPU only during search
-        self.doc_embeddings = self.doc_embeddings.cpu()
-
         logger.info(f"  Indexed {len(documents)} chunks → embeddings shape {self.doc_embeddings.shape}")
 
-    def _encode(self, texts: List[str]):
-        """Encode a batch of texts into embeddings."""
+        # === CRITICAL: Offload embedding model to CPU to free GPU for LLM ===
+        self._offload_model_to_cpu()
+
+    def _offload_model_to_cpu(self):
+        """Move embedding model to CPU and free GPU memory."""
         import torch
+        if self.model is not None and hasattr(self.model, 'device'):
+            try:
+                current_device = next(self.model.parameters()).device
+                if current_device.type == 'cuda':
+                    self.model.cpu()
+                    torch.cuda.empty_cache()
+                    self.device = "cpu"
+                    logger.info("  Embedding model offloaded to CPU (GPU freed for LLM)")
+            except (StopIteration, RuntimeError) as e:
+                logger.warning(f"  Could not offload embedding model: {e}")
+
+    def _encode(self, texts: List[str]):
+        """Encode a batch of texts into embeddings on current model device."""
+        import torch
+
+        # Use whatever device the model is currently on
+        model_device = next(self.model.parameters()).device
 
         inputs = self.tokenizer(
             texts,
@@ -327,7 +347,7 @@ class EmbeddingRetriever:
             truncation=True,
             max_length=512,
             return_tensors="pt"
-        ).to(self.device)
+        ).to(model_device)
 
         with torch.no_grad():
             outputs = self.model(**inputs)
@@ -344,20 +364,22 @@ class EmbeddingRetriever:
         return embeddings
 
     def search(self, query: str, top_k: int = 5) -> List[Tuple[int, float, str]]:
-        """Search for documents matching query via cosine similarity."""
+        """Search for documents matching query via cosine similarity.
+
+        Runs entirely on CPU — no GPU memory needed.
+        """
         import torch
 
         if self.doc_embeddings is None or len(self.documents) == 0:
             return []
 
-        # Encode query (with instruction prefix for Qwen3-Embedding)
+        # Encode query on CPU (model is on CPU after index())
         query_with_instruction = f"Instruct: Find relevant financial document sections\nQuery: {query}"
         query_emb = self._encode([query_with_instruction])
-        query_emb = torch.nn.functional.normalize(query_emb, p=2, dim=1)
+        query_emb = torch.nn.functional.normalize(query_emb, p=2, dim=1).cpu()
 
-        # Cosine similarity (query is on GPU, docs are on CPU — move docs temporarily)
-        doc_emb_device = self.doc_embeddings.to(query_emb.device)
-        scores = torch.mm(query_emb, doc_emb_device.t()).squeeze(0)  # (num_docs,)
+        # Cosine similarity entirely on CPU (fast for <100 chunks)
+        scores = torch.mm(query_emb, self.doc_embeddings.t()).squeeze(0)  # (num_docs,)
 
         # Get top-k
         k = min(top_k, len(self.documents))
@@ -462,7 +484,9 @@ def load_embedding_model(model_path: str, device: str = "cuda"):
     """
     Load Qwen3-Embedding-0.6B for dense retrieval.
 
-    ~1.2GB in fp16 — fits alongside Qwen3-14B 4-bit on A100 20GB.
+    ~1.2GB in fp16.  Loaded on GPU initially for fast batch encoding
+    during index(), then automatically offloaded to CPU by
+    EmbeddingRetriever.index() to free GPU VRAM for the main LLM.
     """
     import torch
     from transformers import AutoModel, AutoTokenizer
