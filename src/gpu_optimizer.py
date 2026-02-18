@@ -679,6 +679,31 @@ def load_llm_optimized(
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
+    # Verify chat template is available (critical for Qwen3)
+    if not hasattr(tokenizer, 'chat_template') or tokenizer.chat_template is None:
+        logger.warning("  Chat template not found in tokenizer — trying original model path")
+        # Fallback: load tokenizer from the original (non-quantized) model
+        import json as _json
+        _cfg_path = os.path.join(model_path, "config.json")
+        if os.path.exists(_cfg_path):
+            try:
+                with open(_cfg_path, 'r') as _f:
+                    _cfg = _json.load(_f)
+                _orig = _cfg.get("_name_or_path", "")
+                if _orig and os.path.exists(_orig):
+                    logger.info(f"  Loading tokenizer from original: {_orig}")
+                    tokenizer = AutoTokenizer.from_pretrained(_orig, trust_remote_code=True)
+                    if tokenizer.pad_token_id is None:
+                        tokenizer.pad_token_id = tokenizer.eos_token_id
+            except Exception:
+                pass
+
+    # Final check
+    if hasattr(tokenizer, 'chat_template') and tokenizer.chat_template:
+        logger.info("  ✓ Chat template available")
+    else:
+        logger.warning("  ✗ No chat template found — apply_chat_template may fail!")
+
     log_gpu_memory("After LLM load: ")
 
     return model, tokenizer
