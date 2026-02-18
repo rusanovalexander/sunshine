@@ -129,8 +129,8 @@ def consolidate_company_documents(
         full_text, 
         tokenizer, 
         source_references,
-        chunk_size=3000,  # Larger chunks for better context
-        overlap=500
+        chunk_size=2000,  # 3 chunks × 2000 = 6K tokens → fits in 8K input limit with prompt
+        overlap=400
     )
     
     return ConsolidatedDocument(
@@ -148,8 +148,8 @@ def create_comprehensive_chunks(
     text: str,
     tokenizer,
     source_refs: List[SourceReference],
-    chunk_size: int = 3000,
-    overlap: int = 500
+    chunk_size: int = 2000,
+    overlap: int = 400
 ) -> List[Dict]:
     """
     Create overlapping chunks that cover the ENTIRE document.
