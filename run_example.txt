@@ -1,72 +1,81 @@
-(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_5/sunshine-master$ python -m src.main   --stage all   --ocr_method easyocr   --company "Autopista Terrassa_36033432" --skip_preprocess 
-
-    ╔═══════════════════════════════════════════════════════════════╗
-    ║     PROJECT SUNSHINE - Document Extraction Pipeline v2        ║
-    ║     Multi-Pass Evidence-Based Extraction System               ║
-    ╠═══════════════════════════════════════════════════════════════╣
-    ║  Stage 1: Document Preprocessing                              ║
-    ║  Stage 2: Multi-Pass Field Group Extraction                   ║
-    ║  Stage 3: Deep Field Extraction (Fallback)                    ║
-    ║  Stage 4: Verification & Consolidation                        ║
-    ╚═══════════════════════════════════════════════════════════════╝
-    
-12:12:23 - Pipeline - INFO - Checking environment...
-12:12:23 - Pipeline - INFO -   GPU: NVIDIA A100-PCIE-40GB MIG 4g.20gb (21.1 GB)
-12:12:23 - Pipeline - INFO -   GPU Memory: 21.1GB free / 21.1GB total
-12:12:25 - Pipeline - INFO -   All required packages available
-12:12:25 - Pipeline - INFO - Checking paths...
-12:12:25 - Pipeline - INFO -   LLM model: OK
-12:12:25 - Pipeline - INFO -   VLM model: OK
-12:12:25 - Pipeline - INFO -   Source data: OK
-12:12:25 - Pipeline - INFO - Skipping preprocessing (--skip_preprocess)
-12:12:25 - Pipeline - INFO - 
+12:28:48 - Pipeline - INFO - Checking environment...
+12:28:48 - Pipeline - INFO -   GPU: NVIDIA A100-PCIE-40GB MIG 4g.20gb (21.1 GB)
+12:28:48 - Pipeline - INFO -   GPU Memory: 21.1GB free / 21.1GB total
+12:28:52 - Pipeline - INFO -   All required packages available
+12:28:52 - Pipeline - INFO - Checking paths...
+12:28:52 - Pipeline - INFO -   LLM model: OK
+12:28:52 - Pipeline - INFO -   VLM model: OK
+12:28:52 - Pipeline - INFO -   Source data: OK
+12:28:52 - Pipeline - INFO - 
 ============================================================
-12:12:25 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION (consolidated per company)
-12:12:25 - Pipeline - INFO - ============================================================
-12:13:12 - Pipeline - INFO - Retriever type: embedding
-12:13:12 - Pipeline - INFO - Loading LLM model...
-12:13:12 - Pipeline - INFO - Loading model: /home/inghero/data/irwbds/llm/parc/qwen3_14B_bnb4
-12:13:12 - Pipeline - INFO - Before model load: GPU Memory: 0.00GB allocated, 0.00GB reserved, 21.07GB free (0.0% used)
-12:13:12 - Pipeline - INFO -   Pre-quantized model detected (bnb4), using optimized loader
-12:13:14 - Pipeline - INFO - Loading LLM from /home/inghero/data/irwbds/llm/parc/qwen3_14B_bnb4
-12:13:14 - Pipeline - INFO -   Detected quantization: bnb4
-12:13:14 - Pipeline - INFO -   Config: Saved BnB 4-bit (pre-quantized), sdpa attn, no max_memory cap
-Loading weights: 100%|█████████████████████████████████████████████████████████████████████████████████████████████| 443/443 [01:57<00:00,  3.79it/s, Materializing param=model.norm.weight]
-12:18:23 - Pipeline - INFO -   ✓ Chat template available
-12:18:23 - Pipeline - INFO - After LLM load: GPU Memory: 9.93GB allocated, 9.95GB reserved, 11.12GB free (47.2% used)
-12:18:23 - Pipeline - INFO - Model loaded successfully
-12:18:23 - Pipeline - INFO - After model load: GPU Memory: 9.93GB allocated, 9.95GB reserved, 11.12GB free (47.2% used)
-12:18:23 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B...
-12:18:23 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B
+12:28:52 - Pipeline - INFO - STAGE 1: DOCUMENT PREPROCESSING
+12:28:52 - Pipeline - INFO - ============================================================
+12:29:08 - Pipeline - INFO - === Company: Ancala LNG_49972986 ===
+12:29:10 - Pipeline - INFO - Processing: 01. Facilities Agreement dated 09.10.2018 COMPILED.pdf
+12:29:24 - Pipeline - INFO - Processing: Viserion Facility Agreement Amendment dated 25 June 2019.pdf
+12:29:34 - Pipeline - INFO - Preprocessing complete. 3 files in manifest.
+12:29:34 - Pipeline - INFO - Unloading VLM to free GPU memory...
+12:29:35 - Pipeline - INFO - After VLM unload: GPU Memory: 0.01GB allocated, 0.02GB reserved, 21.05GB free (0.1% used)
+12:29:35 - Pipeline - INFO - 
+============================================================
+12:29:35 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION (consolidated per company)
+12:29:35 - Pipeline - INFO - ============================================================
+12:29:36 - Pipeline - INFO - Retriever type: embedding
+12:29:36 - Pipeline - INFO - Loading LLM model...
+12:29:36 - Pipeline - INFO - Loading model: /home/inghero/data/irwbds/llm/parc/qwen3_14B_bnb4
+12:29:36 - Pipeline - INFO - Before model load: GPU Memory: 0.01GB allocated, 0.02GB reserved, 21.05GB free (0.1% used)
+12:29:37 - Pipeline - INFO -   Pre-quantized model detected (bnb4), using optimized loader
+12:29:38 - Pipeline - INFO - Loading LLM from /home/inghero/data/irwbds/llm/parc/qwen3_14B_bnb4
+12:29:38 - Pipeline - INFO -   Detected quantization: bnb4
+12:29:38 - Pipeline - INFO -   Config: Saved BnB 4-bit (pre-quantized), sdpa attn, no max_memory cap
+Loading weights: 100%|█████████████████████████████████████████████████████████████████████████████████████| 443/443 [02:04<00:00,  3.57it/s, Materializing param=model.norm.weight]
+12:34:44 - Pipeline - INFO -   ✓ Chat template available
+12:34:44 - Pipeline - INFO - After LLM load: GPU Memory: 9.94GB allocated, 9.95GB reserved, 11.13GB free (47.2% used)
+12:34:44 - Pipeline - INFO - Model loaded successfully
+12:34:44 - Pipeline - INFO - After model load: GPU Memory: 9.94GB allocated, 9.95GB reserved, 11.13GB free (47.2% used)
+12:34:44 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B...
+12:34:44 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B
 `torch_dtype` is deprecated! Use `dtype` instead!
-Loading weights: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████| 310/310 [00:11<00:00, 26.28it/s, Materializing param=norm.weight]
-12:18:43 - Pipeline - INFO -   Embedding model loaded on cuda
-12:18:43 - Pipeline - INFO - Processing 1 companies (1 files total)
-12:18:43 - Pipeline - INFO - 
+Loading weights: 100%|███████████████████████████████████████████████████████████████████████████████████████████| 310/310 [00:13<00:00, 22.58it/s, Materializing param=norm.weight]
+12:35:10 - Pipeline - INFO -   Embedding model loaded on cuda
+12:35:10 - Pipeline - INFO - Processing 1 companies (2 files total)
+12:35:10 - Pipeline - INFO - 
 ════════════════════════════════════════════════════════════
-12:18:43 - Pipeline - INFO - Company 1/1: Autopista Terrassa_36033432 (1 files)
-12:18:43 - Pipeline - INFO - ════════════════════════════════════════════════════════════
-12:18:43 - Pipeline - INFO -   Step 1: Consolidating all files...
-12:18:43 - Pipeline - INFO - Consolidating 1 files for Autopista Terrassa_36033432
-Token indices sequence length is longer than the specified maximum sequence length for this model (411190 > 131072). Running this sequence through the model will result in indexing errors
-12:18:45 - Pipeline - INFO -   Combined document: 1,279,131 chars, ~411,190 tokens
-12:18:45 - Pipeline - INFO -   Source files: 1
-12:18:46 - Pipeline - INFO -   Creating chunks: 411190 tokens, size=2000, overlap=400
-12:19:08 - Pipeline - INFO -   Created 257 chunks covering entire document
-12:19:08 - Pipeline - INFO -   ✓ Complete coverage verified: 100.00%
-12:19:08 - Pipeline - INFO -   Consolidated: 411,190 tokens, 257 chunks from 1 files
-12:19:09 - Pipeline - INFO -   Saved consolidated document to extraction_outputs_v3/Autopista Terrassa_36033432
-12:19:09 - Pipeline - INFO -   Document language detected: es
-12:19:09 - Pipeline - INFO -   Encoding 257 chunks with embedding model...
-12:19:14 - Pipeline - INFO -   Indexed 257 chunks → embeddings shape torch.Size([257, 1024])
-12:19:14 - Pipeline - INFO -   Embedding model offloaded to CPU (GPU freed for LLM)
-12:19:14 - Pipeline - INFO -   Step 2: Detecting facilities...
-12:20:13 - Pipeline - INFO -       Facility detection: trimming from 29171 to 5000 tokens
-12:20:13 - Pipeline - INFO -   LLM input: 5485 tokens, max_new_tokens=2048
+12:35:10 - Pipeline - INFO - Company 1/1: Ancala LNG_49972986 (2 files)
+12:35:10 - Pipeline - INFO - ════════════════════════════════════════════════════════════
+12:35:10 - Pipeline - INFO -   Step 1: Consolidating all files...
+12:35:10 - Pipeline - INFO - Consolidating 2 files for Ancala LNG_49972986
+Token indices sequence length is longer than the specified maximum sequence length for this model (136472 > 131072). Running this sequence through the model will result in indexing errors
+12:35:11 - Pipeline - INFO -   Combined document: 572,008 chars, ~136,472 tokens
+12:35:11 - Pipeline - INFO -   Source files: 2
+12:35:11 - Pipeline - INFO -   Creating chunks: 136472 tokens, size=2000, overlap=400
+12:35:14 - Pipeline - INFO -   Created 86 chunks covering entire document
+12:35:14 - Pipeline - INFO -   ✓ Complete coverage verified: 100.00%
+12:35:14 - Pipeline - INFO -   Consolidated: 136,472 tokens, 86 chunks from 2 files
+12:35:17 - Pipeline - INFO -   Saved consolidated document to extraction_outputs_v3/Ancala LNG_49972986
+12:35:17 - Pipeline - INFO -   Document language detected: en
+12:35:17 - Pipeline - INFO -   Encoding 86 chunks with embedding model...
+12:35:19 - Pipeline - INFO -   Indexed 86 chunks → embeddings shape torch.Size([86, 1024])
+12:35:19 - Pipeline - INFO -   Embedding model offloaded to CPU (GPU freed for LLM)
+12:35:19 - Pipeline - INFO -   Step 2: Detecting facilities...
+12:35:36 - Pipeline - INFO -       Facility detection: trimming from 21862 to 5000 tokens
+12:35:36 - Pipeline - INFO -   LLM input: 5426 tokens, max_new_tokens=2048
 The following generation flags are not valid and may be ignored: ['top_p', 'top_k']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
-12:20:20 - Pipeline - INFO - Detected 0 facilities
-12:20:20 - Pipeline - INFO -   Found 0 facilities
-12:20:20 - Pipeline - WARNING -   ✗ No data extracted for Autopista Terrassa_36033432
-12:20:20 - Pipeline - WARNING - No data extracted
-12:20:20 - Pipeline - ERROR - Extraction failed
-(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_5/sunshine-master$ 
+12:36:06 - Pipeline - INFO - Detected 3 facilities
+12:36:06 - Pipeline - INFO -   Found 3 facilities
+12:36:06 - Pipeline - INFO -   Step 3.1: Extracting for Sterling Term Facility Loan (Term Loan)
+12:36:06 - Pipeline - INFO -     Extracting: Basic Facility Information
+12:36:10 - Pipeline - INFO -   LLM input: 6622 tokens, max_new_tokens=1024
+12:36:56 - Pipeline - INFO -   LLM input: 6622 tokens, max_new_tokens=1024
+12:38:22 - Pipeline - WARNING -       Schema validation issues: ['Missing field: Type of tranche: Term Loan, Revolving Loan (RCF), Letter of Credit (LC), Bond']...
+12:38:22 - Pipeline - INFO -   LLM input: 6620 tokens, max_new_tokens=1024
+12:38:58 - Pipeline - WARNING -       Schema validation issues: ['Missing field: Type of tranche: Term Loan, Revolving Loan (RCF), Letter of Credit (LC), Bond']...
+12:38:59 - Pipeline - INFO -   LLM input: 6621 tokens, max_new_tokens=1024
+12:39:38 - Pipeline - WARNING -       Schema validation issues: ['Missing field: Type of tranche: Term Loan, Revolving Loan (RCF), Letter of Credit (LC), Bond']...
+12:39:38 - Pipeline - INFO -   LLM input: 6621 tokens, max_new_tokens=1024
+12:40:23 - Pipeline - WARNING -       Schema validation issues: ['Missing field: Type of tranche: Term Loan, Revolving Loan (RCF), Letter of Credit (LC), Bond']...
+12:40:23 - Pipeline - INFO -   LLM input: 6620 tokens, max_new_tokens=1024
+12:41:05 - Pipeline - WARNING -       Schema validation issues: ['Missing field: Type of tranche: Term Loan, Revolving Loan (RCF), Letter of Credit (LC), Bond']...
+12:41:05 - Pipeline - INFO -   LLM input: 6622 tokens, max_new_tokens=1024
+12:41:45 - Pipeline - WARNING -       Schema validation issues: ['Missing field: Type of tranche: Term Loan, Revolving Loan (RCF), Letter of Credit (LC), Bond']...
+12:41:45 - Pipeline - INFO -   LLM input: 6622 tokens, max_new_tokens=1024
