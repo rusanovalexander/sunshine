@@ -473,6 +473,54 @@ def validate_extraction_schema(result: Dict, expected_fields: List[str]) -> Tupl
     return is_valid, issues
 
 
+def _fuzzy_remap_fields(result: Dict, expected_fields: List[str]) -> Dict:
+    """Remap LLM-generated field keys to expected field names.
+
+    The LLM sometimes abbreviates or rephrases field names (e.g.
+    "Type of tranche" instead of the full key).  This finds the best
+    match among unmatched result keys for each missing expected field
+    and remaps it in-place.
+    """
+    if "fields" not in result or not isinstance(result["fields"], dict):
+        return result
+
+    fields = result["fields"]
+    present = set(fields.keys())
+    expected_set = set(expected_fields)
+
+    missing = expected_set - present
+    extra = present - expected_set
+
+    if not missing or not extra:
+        return result
+
+    # For each missing field, find best match in extra keys
+    for expected in list(missing):
+        expected_lower = expected.lower()
+        best_match = None
+        best_score = 0
+        for candidate in extra:
+            candidate_lower = candidate.lower()
+            # Score: how many words from expected appear in candidate (or vice versa)
+            expected_words = set(expected_lower.split())
+            candidate_words = set(candidate_lower.split())
+            overlap = len(expected_words & candidate_words)
+            # Also check prefix containment
+            if expected_lower.startswith(candidate_lower) or candidate_lower.startswith(expected_lower):
+                overlap += 3  # Strong bonus for prefix match
+            if overlap > best_score and overlap >= 2:
+                best_score = overlap
+                best_match = candidate
+
+        if best_match:
+            fields[expected] = fields.pop(best_match)
+            extra.discard(best_match)
+            missing.discard(expected)
+            logger.debug(f"      Fuzzy remap: '{best_match}' → '{expected}'")
+
+    return result
+
+
 # =====================================================================
 # MULTILINGUAL RETRIEVAL QUERIES
 # =====================================================================
@@ -727,8 +775,14 @@ def extract_field_group(group_name: str, group_config: Dict,
             return result
         else:
             logger.warning(f"      Schema validation issues: {issues[:3]}...")  # Show first 3
-            # Try to fix: if 'fields' key exists but some fields missing,
-            # fill them with NOT_FOUND rather than retrying
+            # Try fuzzy remapping first — LLM may have used a shortened field name
+            if "fields" in result and isinstance(result["fields"], dict):
+                result = _fuzzy_remap_fields(result, expected_field_names)
+                # Re-validate after remap
+                is_valid2, _ = validate_extraction_schema(result, expected_field_names)
+                if is_valid2:
+                    return result
+            # Fill remaining missing fields with NOT_FOUND rather than retrying
             if "fields" in result and isinstance(result["fields"], dict):
                 for field_name in expected_field_names:
                     if field_name not in result["fields"]:
@@ -759,6 +813,8 @@ def extract_field_group(group_name: str, group_config: Dict,
     _update_trace_parsed_result(trace_path2, result2)
 
     if result2 and "fields" in result2:
+        # Try fuzzy remapping before patching
+        result2 = _fuzzy_remap_fields(result2, expected_field_names)
         # Patch missing fields
         for field_name in expected_field_names:
             if field_name not in result2.get("fields", {}):

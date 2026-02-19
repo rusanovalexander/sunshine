@@ -47,7 +47,7 @@ FIELD_GROUP_EXAMPLES: Dict[str, Dict] = {
                 "evidence": "EUR 250,000,000 Term Loan Facility",
                 "confidence": "HIGH"
             },
-            "Type of tranche: Term Loan, Revolving Loan (RCF), Letter of Credit (LC), Bond": {
+            "Type of tranche": {
                 "value": "Term Loan",
                 "evidence": "EUR 250,000,000 Term Loan Facility",
                 "confidence": "HIGH"
