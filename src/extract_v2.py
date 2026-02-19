@@ -82,8 +82,11 @@ _trace_counter = 0
 
 def _save_debug_trace(step_name: str, messages: list, response: str,
                       input_tokens: int, elapsed_sec: float,
-                      parsed_result=None, company: str = ""):
-    """Save a single LLM call's full prompt + response for debugging."""
+                      parsed_result=None, company: str = "") -> str:
+    """Save a single LLM call's full prompt + response for debugging.
+
+    Returns the filepath of the saved trace (used by _update_trace_parsed_result).
+    """
     global _trace_counter
     _trace_counter += 1
 
@@ -115,6 +118,24 @@ def _save_debug_trace(step_name: str, messages: list, response: str,
             json.dump(trace, f, indent=2, ensure_ascii=False, default=str)
     except Exception as e:
         logger.warning(f"Failed to save debug trace: {e}")
+    return filepath
+
+
+def _update_trace_parsed_result(trace_filepath: str, parsed_result):
+    """Patch an existing debug trace file with the parsed JSON result.
+
+    Called after parse_json_response() so the trace shows whether
+    parsing succeeded and what the structured result looks like.
+    """
+    try:
+        with open(trace_filepath, 'r', encoding='utf-8') as f:
+            trace = json.load(f)
+        trace["parsed_ok"] = parsed_result is not None
+        trace["parsed_result"] = parsed_result
+        with open(trace_filepath, 'w', encoding='utf-8') as f:
+            json.dump(trace, f, indent=2, ensure_ascii=False, default=str)
+    except Exception:
+        pass  # Non-critical — don't break extraction if trace update fails
 
 
 # Current company context for debug traces (set by processing functions)
@@ -221,11 +242,15 @@ def initialize_model(model_path: str, use_flash_attention: bool = False):
 
 def llm_generate(prompt_messages: List[Dict], model, tokenizer,
                  max_tokens: int = MAX_NEW_TOKENS,
-                 step_name: str = "llm_call") -> str:
+                 step_name: str = "llm_call") -> Tuple[str, str]:
     """Generate LLM response with memory-efficient settings.
 
     Args:
         step_name: Label for debug trace (e.g. "facility_detection", "extract_pricing").
+
+    Returns:
+        (response_text, trace_filepath) — caller should update trace with parsed result
+        via _update_trace_parsed_result(trace_filepath, parsed_result).
     """
     t0 = _time.time()
     try:
@@ -279,15 +304,15 @@ def llm_generate(prompt_messages: List[Dict], model, tokenizer,
         del inputs, outputs
         torch.cuda.empty_cache()
 
-        # Save debug trace
+        # Save debug trace (parsed_result filled in later by caller)
         elapsed = _time.time() - t0
-        _save_debug_trace(
+        _last_trace_path = _save_debug_trace(
             step_name=step_name, messages=prompt_messages,
             response=response, input_tokens=input_len,
             elapsed_sec=elapsed, company=_current_company
         )
 
-        return response
+        return response, _last_trace_path
     except Exception as e:
         # Catch ALL errors including NVML assertion failures (not just torch.cuda.OutOfMemoryError)
         error_str = str(e)
@@ -316,13 +341,13 @@ def llm_generate(prompt_messages: List[Dict], model, tokenizer,
                 ).strip()
                 del inputs, outputs
                 torch.cuda.empty_cache()
-                return response
+                return response, ""
             except Exception as e2:
                 logger.error(f"Recovery failed: {e2}")
                 aggressive_memory_cleanup()
-                return ""
+                return "", ""
 
-        return ""
+        return "", ""
 
 
 def parse_json_response(response: str) -> Optional[Dict]:
@@ -465,13 +490,10 @@ def detect_facilities(document_text: str, model, tokenizer,
         {"role": "user", "content": prompt}
     ]
 
-    response = llm_generate(messages, model, tokenizer, max_tokens=2048,
-                            step_name="facility_detection")
+    response, trace_path = llm_generate(messages, model, tokenizer, max_tokens=2048,
+                                         step_name="facility_detection")
     result = parse_json_response(response)
-
-    # Save parsed result to debug trace
-    _save_debug_trace("facility_detection_parsed", messages, response,
-                      0, 0, parsed_result=result, company=_current_company)
+    _update_trace_parsed_result(trace_path, result)
 
     if result and 'facilities' in result:
         logger.info(f"Detected {result.get('total_facilities', 0)} facilities")
@@ -547,9 +569,10 @@ def extract_field_group(group_name: str, group_config: Dict,
     expected_field_names = [name for name, _ in fields]
 
     # Attempt 1: normal generation
-    response = llm_generate(messages, model, tokenizer, max_tokens=group_max_tokens,
-                            step_name=f"extract_{group_name}")
+    response, trace_path = llm_generate(messages, model, tokenizer, max_tokens=group_max_tokens,
+                                        step_name=f"extract_{group_name}")
     result = parse_json_response(response)
+    _update_trace_parsed_result(trace_path, result)
 
     if result:
         is_valid, issues = validate_extraction_schema(result, expected_field_names)
@@ -583,9 +606,10 @@ def extract_field_group(group_name: str, group_config: Dict,
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt + "\n\nIMPORTANT: Your response MUST be valid JSON only. No text before or after the JSON object."}
     ]
-    response2 = llm_generate(retry_messages, model, tokenizer, max_tokens=group_max_tokens,
-                             step_name=f"extract_{group_name}_retry")
+    response2, trace_path2 = llm_generate(retry_messages, model, tokenizer, max_tokens=group_max_tokens,
+                                           step_name=f"extract_{group_name}_retry")
     result2 = parse_json_response(response2)
+    _update_trace_parsed_result(trace_path2, result2)
 
     if result2 and "fields" in result2:
         # Patch missing fields
@@ -705,9 +729,11 @@ def verify_extraction(extractions: Dict, document_sample: str,
         {"role": "user", "content": prompt}
     ]
 
-    response = llm_generate(messages, model, tokenizer, max_tokens=1024,
-                            step_name="verification")
-    return parse_json_response(response) or {}
+    response, trace_path = llm_generate(messages, model, tokenizer, max_tokens=1024,
+                                         step_name="verification")
+    result = parse_json_response(response)
+    _update_trace_parsed_result(trace_path, result)
+    return result or {}
 
 
 def apply_corrections(extractions: Dict, verification: Dict) -> Dict:

@@ -243,8 +243,8 @@ def deep_extract_field(field_name: str, retriever: BM25Retriever,
         {"role": "user", "content": prompt}
     ]
 
-    response = llm_generate_fn(messages, model, tokenizer, max_tokens=500,
-                               step_name=f"deep_extract_{field_name[:40]}")
+    response, _trace_path = llm_generate_fn(messages, model, tokenizer, max_tokens=500,
+                                              step_name=f"deep_extract_{field_name[:40]}")
     result = parse_json_response(response)
 
     if result:
