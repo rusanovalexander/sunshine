@@ -140,12 +140,62 @@ def _update_trace_parsed_result(trace_filepath: str, parsed_result):
 
 # Current company context for debug traces (set by processing functions)
 _current_company = ""
+_current_language = "en"  # Detected document language (ISO 639-1 code)
 
 
 def set_debug_company(company: str):
     """Set current company for debug trace file organization."""
     global _current_company
     _current_company = company
+
+
+def detect_document_language(text: str) -> str:
+    """Detect language of the document using langdetect.
+
+    Returns ISO 639-1 code (e.g. 'en', 'es', 'fr', 'de', 'nl', 'pt').
+    Falls back to 'en' if detection fails.
+    """
+    global _current_language
+    try:
+        from langdetect import detect
+        # Use first ~5000 chars for reliable detection, skip headers/markers
+        sample = re.sub(r'={3,}|\[PAGE \d+\]|\[SOURCE FILE:.*?\]', '', text[:8000])
+        lang = detect(sample.strip())
+        _current_language = lang
+        logger.info(f"  Document language detected: {lang}")
+        return lang
+    except Exception as e:
+        logger.warning(f"  Language detection failed ({e}), defaulting to English")
+        _current_language = "en"
+        return "en"
+
+
+def _get_language_prompt_hint() -> str:
+    """Return a prompt hint for non-English documents.
+
+    Tells the LLM the document language so it can read non-English text
+    correctly while still outputting field values and JSON keys in English.
+    """
+    if _current_language == "en":
+        return ""
+
+    LANG_NAMES = {
+        "es": "Spanish", "fr": "French", "de": "German", "nl": "Dutch",
+        "pt": "Portuguese", "it": "Italian", "pl": "Polish", "ro": "Romanian",
+        "cs": "Czech", "da": "Danish", "sv": "Swedish", "nb": "Norwegian",
+        "fi": "Finnish", "hu": "Hungarian", "el": "Greek", "tr": "Turkish",
+        "ru": "Russian", "uk": "Ukrainian", "ja": "Japanese", "zh-cn": "Chinese",
+        "ko": "Korean", "ar": "Arabic",
+    }
+    lang_name = LANG_NAMES.get(_current_language, _current_language.upper())
+
+    return (
+        f"\n\nLANGUAGE NOTE: This document is written in {lang_name}. "
+        f"Read and understand the {lang_name} text, but output ALL field names "
+        f"and JSON keys in English exactly as specified above. "
+        f"Extract values as they appear in the document (keep original language "
+        f"for names and terms, but convert dates/numbers to the requested format)."
+    )
 
 
 # =====================================================================
@@ -424,6 +474,71 @@ def validate_extraction_schema(result: Dict, expected_fields: List[str]) -> Tupl
 
 
 # =====================================================================
+# MULTILINGUAL RETRIEVAL QUERIES
+# =====================================================================
+
+# BM25 queries for facility detection in non-English documents.
+# Each language maps to queries covering: facility enumeration, commitments,
+# definitions, maturity, and pricing — mirroring the English queries.
+_MULTILINGUAL_FACILITY_QUERIES = {
+    "es": [  # Spanish
+        "Las Facilidades poner a disposición préstamo crédito monto total importe",
+        "Compromisos Totales compromiso agregado facilidad",
+        "facilidad tramo compromiso importe límite crédito",
+        "Fecha de Vencimiento plazo años desde",
+        "Margen porcentaje por ciento anual facilidad préstamo",
+    ],
+    "fr": [  # French
+        "Les Facilités mettre à disposition prêt crédit montant total",
+        "Engagements Totaux engagement agrégé facilité",
+        "facilité tranche engagement montant limite crédit",
+        "Date d'Échéance années à compter de",
+        "Marge pourcentage par an facilité prêt",
+    ],
+    "de": [  # German
+        "Die Fazilitäten zur Verfügung stellen Darlehen Kredit Gesamtbetrag",
+        "Gesamtzusagen Zusage aggregiert Fazilität",
+        "Fazilität Tranche Zusage Betrag Limit Kredit",
+        "Endfälligkeitsdatum Jahre ab Lieferung",
+        "Marge Prozent pro Jahr Fazilität Darlehen",
+    ],
+    "nl": [  # Dutch
+        "De Faciliteiten beschikbaar stellen lening krediet totaal bedrag",
+        "Totale Verplichtingen verplichting geaggregeerd faciliteit",
+        "faciliteit tranche verplichting bedrag limiet krediet",
+        "Einddatum looptijd jaren vanaf levering",
+        "Marge percentage per jaar faciliteit lening",
+    ],
+    "pt": [  # Portuguese
+        "As Facilidades disponibilizar empréstimo crédito montante total",
+        "Compromissos Totais compromisso agregado facilidade",
+        "facilidade tranche compromisso montante limite crédito",
+        "Data de Vencimento prazo anos a partir de",
+        "Margem percentagem por cento por ano facilidade empréstimo",
+    ],
+    "it": [  # Italian
+        "Le Facilitazioni mettere a disposizione prestito credito importo totale",
+        "Impegni Totali impegno aggregato facilitazione",
+        "facilitazione tranche impegno importo limite credito",
+        "Data di Scadenza anni dalla consegna",
+        "Margine percentuale per cento annuo facilitazione prestito",
+    ],
+    "pl": [  # Polish
+        "Udostępnić kredyt pożyczka kwota łączna suma",
+        "Zobowiązania łączne zobowiązanie kredyt",
+        "kredyt transza zobowiązanie kwota limit",
+        "Data zapadalności termin lata od",
+        "Marża procent rocznie kredyt pożyczka",
+    ],
+}
+
+
+def _get_multilingual_facility_queries(lang_code: str) -> List[str]:
+    """Return facility detection BM25 queries for the given language."""
+    return _MULTILINGUAL_FACILITY_QUERIES.get(lang_code, [])
+
+
+# =====================================================================
 # FACILITY DETECTION
 # =====================================================================
 
@@ -449,20 +564,21 @@ def detect_facilities(document_text: str, model, tokenizer,
     # 1. Beginning of document (cover page, table of contents, initial definitions)
     _add_part(document_text[:8000])
 
-    # 2. Targeted BM25 retrieval with multiple specific queries
+    # 2. Targeted retrieval with multiple specific queries
     if retriever:
         targeted_queries = [
-            # The clause that enumerates all facilities
+            # English queries
             "The Facilities make available term loan revolving credit facility aggregate amount",
-            # Commitment amounts per facility
             "Total Commitments Total Facility Commitments aggregate being",
-            # Facility definitions with types and amounts
             "facility tranche commitment amount schedule limit",
-            # Final maturity / tenor section (often lists per-facility terms)
             "Final Maturity Date years from Escrow Delivery",
-            # Margin / pricing section (lists per-facility rates)
             "Margin per cent per annum Facility Loan",
         ]
+
+        # Add multilingual queries for non-English documents
+        if _current_language != "en":
+            multilingual_queries = _get_multilingual_facility_queries(_current_language)
+            targeted_queries.extend(multilingual_queries)
         for query in targeted_queries:
             bm25_results = retriever.search(query, top_k=3)
             for _, _, chunk_text in bm25_results:
@@ -484,6 +600,7 @@ def detect_facilities(document_text: str, model, tokenizer,
         combined = tokenizer.decode(doc_tokens[:max_detect_tokens], skip_special_tokens=True)
 
     prompt = FACILITY_DETECTION_PROMPT.format(document_text=combined)
+    prompt += _get_language_prompt_hint()
 
     messages = [
         {"role": "system", "content": "You are a financial analyst. Respond only with valid JSON."},
@@ -553,6 +670,9 @@ def extract_field_group(group_name: str, group_config: Dict,
     # Enhance with per-group few-shot example
     if FEW_SHOT_AVAILABLE:
         user_prompt = create_enhanced_extraction_prompt(user_prompt, group_name=group_name)
+
+    # Add language hint for non-English documents
+    user_prompt += _get_language_prompt_hint()
 
     # Use group-specific system prompt if available, otherwise generic
     system_prompt = FIELD_GROUP_SYSTEM_PROMPTS.get(group_name, EXTRACTION_SYSTEM_PROMPT)
@@ -723,6 +843,7 @@ def verify_extraction(extractions: Dict, document_sample: str,
         extracted_data=extracted_data,
         document_text=verification_context
     )
+    prompt += _get_language_prompt_hint()
 
     messages = [
         {"role": "system", "content": "You are a financial analyst performing quality control. Respond only with valid JSON."},
@@ -841,13 +962,16 @@ def process_document(company: str, manifest_entry: Dict,
     with open(text_file, 'r', encoding='utf-8') as f:
         full_text = f.read()
 
+    # Detect document language for multilingual support
+    detect_document_language(full_text)
+
     # Create retriever
     retriever = create_retriever_from_chunks(
         chunks, retriever_type=retriever_type,
         embedding_model=embedding_model,
         embedding_tokenizer=embedding_tokenizer
     )
-    
+
     # Step 1: Detect facilities (pass retriever for targeted section retrieval)
     logger.info("  Step 1: Detecting facilities...")
     facilities = detect_facilities(full_text, model, tokenizer, retriever=retriever)
@@ -1091,6 +1215,9 @@ def process_company_consolidated(
 
     # Save consolidated document for debugging
     save_consolidated_document(consolidated, EXTRACTION_DIR)
+
+    # Detect document language for multilingual support
+    detect_document_language(consolidated.full_text)
 
     # Step 2: Create retriever from consolidated chunks
     retriever = create_retriever_from_chunks(

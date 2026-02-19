@@ -238,6 +238,13 @@ def deep_extract_field(field_name: str, retriever: BM25Retriever,
         context=prompt_context
     )
 
+    # Add language hint for non-English documents
+    try:
+        from .extract_v2 import _get_language_prompt_hint
+        prompt += _get_language_prompt_hint()
+    except ImportError:
+        pass
+
     messages = [
         {"role": "system", "content": "You are a precise financial data extractor. Respond only with valid JSON."},
         {"role": "user", "content": prompt}
