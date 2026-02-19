@@ -481,12 +481,16 @@ def validate_extraction_schema(result: Dict, expected_fields: List[str]) -> Tupl
 # Each language maps to queries covering: facility enumeration, commitments,
 # definitions, maturity, and pricing — mirroring the English queries.
 _MULTILINGUAL_FACILITY_QUERIES = {
-    "es": [  # Spanish
+    "es": [  # Spanish — covers both LMA-style and notarial deed vocabulary
         "Las Facilidades poner a disposición préstamo crédito monto total importe",
         "Compromisos Totales compromiso agregado facilidad",
         "facilidad tramo compromiso importe límite crédito",
-        "Fecha de Vencimiento plazo años desde",
-        "Margen porcentaje por ciento anual facilidad préstamo",
+        "Fecha de Vencimiento plazo años desde amortización reembolso",
+        "Margen porcentaje por ciento anual facilidad préstamo tipo de interés",
+        # Notarial deed / escritura pública terms
+        "El Crédito disponibilidad importe principal entidades acreedoras",
+        "contrato de crédito sindicado préstamo participantes agente",
+        "Reembolso Amortización vencimiento cuotas calendario pagos",
     ],
     "fr": [  # French
         "Les Facilités mettre à disposition prêt crédit montant total",
@@ -548,23 +552,27 @@ def detect_facilities(document_text: str, model, tokenizer,
     First pass: Detect all distinct facilities/tranches in the document.
     This helps us know if we need per-facility extraction.
 
-    Uses targeted BM25 retrieval with multiple queries to gather all
+    Uses targeted retrieval with multiple queries to gather all
     facility-related sections, not just the document beginning.
+
+    Strategy: collect ALL candidate chunks (retrieved + document edges),
+    deduplicate, rank by relevance score, and greedily fill the 5K token
+    budget with the best chunks.  No hardcoded ordering — works for any
+    document language or structure.
     """
-    text_parts = []
-    seen_prefixes = set()
+    # Collect scored candidate chunks: (score, text)
+    # Higher score = more likely to contain facility definitions
+    candidates: Dict[str, float] = {}  # prefix -> best score
+    candidate_texts: Dict[str, str] = {}  # prefix -> full text
 
-    def _add_part(text: str):
-        """Add text part, avoiding near-duplicates."""
+    def _add_candidate(text: str, score: float):
+        """Add candidate chunk, keeping highest score per unique prefix."""
         prefix = text[:200].strip()
-        if prefix not in seen_prefixes:
-            seen_prefixes.add(prefix)
-            text_parts.append(text)
+        if prefix not in candidates or score > candidates[prefix]:
+            candidates[prefix] = score
+            candidate_texts[prefix] = text
 
-    # 1. Beginning of document (cover page, table of contents, initial definitions)
-    _add_part(document_text[:8000])
-
-    # 2. Targeted retrieval with multiple specific queries
+    # 1. Targeted retrieval with multiple specific queries
     if retriever:
         targeted_queries = [
             # English queries
@@ -580,24 +588,43 @@ def detect_facilities(document_text: str, model, tokenizer,
             multilingual_queries = _get_multilingual_facility_queries(_current_language)
             targeted_queries.extend(multilingual_queries)
         for query in targeted_queries:
-            bm25_results = retriever.search(query, top_k=3)
-            for _, _, chunk_text in bm25_results:
-                _add_part(chunk_text)
+            results = retriever.search(query, top_k=3)
+            for _, score, chunk_text in results:
+                _add_candidate(chunk_text, score)
+
+    # 2. Beginning of document (cover page, TOC, initial definitions)
+    # Score 0.1 — low baseline so retriever hits beat it when relevant,
+    # but it still gets included when budget allows
+    _add_candidate(document_text[:8000], 0.1)
 
     # 3. End of document (schedules with lender commitments)
     if len(document_text) > 20000:
-        _add_part(document_text[-5000:])
+        _add_candidate(document_text[-5000:], 0.05)
 
-    # Combine and tokenize to enforce a token budget (not char budget)
-    combined = "\n\n---\n\n".join(text_parts)
-
-    # Use token-based truncation: ~5K tokens for document leaves room
-    # for the prompt template + system prompt within 8K input limit
+    # Sort candidates by score descending and greedily fill token budget
     max_detect_tokens = 5000
-    doc_tokens = tokenizer.encode(combined, add_special_tokens=False)
-    if len(doc_tokens) > max_detect_tokens:
-        logger.info(f"      Facility detection: trimming from {len(doc_tokens)} to {max_detect_tokens} tokens")
-        combined = tokenizer.decode(doc_tokens[:max_detect_tokens], skip_special_tokens=True)
+    sorted_candidates = sorted(candidates.items(), key=lambda x: x[1], reverse=True)
+
+    selected_parts = []
+    used_tokens = 0
+    for prefix, score in sorted_candidates:
+        text = candidate_texts[prefix]
+        part_tokens = len(tokenizer.encode(text, add_special_tokens=False))
+        if used_tokens + part_tokens <= max_detect_tokens:
+            selected_parts.append(text)
+            used_tokens += part_tokens
+        elif used_tokens < max_detect_tokens:
+            # Partially fit the last chunk
+            remaining = max_detect_tokens - used_tokens
+            part_tok_ids = tokenizer.encode(text, add_special_tokens=False)[:remaining]
+            selected_parts.append(tokenizer.decode(part_tok_ids, skip_special_tokens=True))
+            used_tokens += remaining
+            break
+
+    combined = "\n\n---\n\n".join(selected_parts)
+
+    logger.info(f"      Facility detection: {len(candidates)} unique chunks scored, "
+                f"{len(selected_parts)} selected → {used_tokens} tokens")
 
     prompt = FACILITY_DETECTION_PROMPT.format(document_text=combined)
     prompt += _get_language_prompt_hint()
