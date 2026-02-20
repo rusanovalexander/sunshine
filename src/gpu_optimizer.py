@@ -643,17 +643,32 @@ def load_llm_optimized(
 
     elif quant_type == "bnb4":
         # ─── Saved BitsAndBytes 4-bit: load directly (no re-quantization) ───
-        # No max_memory cap — let device_map="auto" handle placement.
-        logger.info(f"  Config: Saved BnB 4-bit (pre-quantized), sdpa attn, no max_memory cap")
+        # Use Flash Attention 2 on A100 when requested (faster inference).
+        attn_impl = "flash_attention_2" if use_flash_attention else "sdpa"
+        logger.info(f"  Config: Saved BnB 4-bit (pre-quantized), {attn_impl} attn, no max_memory cap")
 
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            device_map="auto",
-            trust_remote_code=True,
-            attn_implementation="sdpa",
-            low_cpu_mem_usage=True,
-            use_safetensors=True,
-        )
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                device_map="auto",
+                trust_remote_code=True,
+                attn_implementation=attn_impl,
+                low_cpu_mem_usage=True,
+                use_safetensors=True,
+            )
+        except (ValueError, Exception) as e:
+            if use_flash_attention and "flash" in str(e).lower():
+                logger.warning(f"  Flash Attention 2 not available ({e}), falling back to sdpa")
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_path,
+                    device_map="auto",
+                    trust_remote_code=True,
+                    attn_implementation="sdpa",
+                    low_cpu_mem_usage=True,
+                    use_safetensors=True,
+                )
+            else:
+                raise
 
     else:
         # ─── No pre-quantized weights: use BitsAndBytes 4-bit on-the-fly ───

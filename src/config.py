@@ -42,6 +42,13 @@ TEMPERATURE = 0.1
 TOP_P = 0.95
 REPETITION_PENALTY = 1.1
 
+# Speed budget: target ≤1 hour per company (~100K tokens, 2–3 facilities on A100 20GB)
+# See docs/DEEP_ANALYSIS_AND_GEMINI_QUALITY.md §6 for the call-count and time model.
+# Section passes: 1 = BM25 + one section pass per group (~24 extraction calls/facility).
+# Deep extraction: 20 keeps POSSIBLY_PRESENT recovery while staying under ~120 calls/company.
+MAX_SECTION_PASSES_PER_GROUP = 1   # 0 = BM25 only (fastest), 2 = more coverage, slower
+MAX_DEEP_EXTRACT_FIELDS_PER_FACILITY = 20  # Cap deep extraction (prioritise POSSIBLY_PRESENT)
+
 # =====================================================================
 # FIELD GROUPS - Logical groupings for multi-pass extraction
 # =====================================================================

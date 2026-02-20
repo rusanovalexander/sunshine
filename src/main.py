@@ -229,7 +229,8 @@ def run_extraction(args):
                 company, company_manifest, model, tokenizer,
                 retriever_type=retriever_type,
                 embedding_model=embedding_model,
-                embedding_tokenizer=embedding_tokenizer
+                embedding_tokenizer=embedding_tokenizer,
+                skip_verification=getattr(args, 'skip_verification', False)
             )
 
             if extraction and extraction.facilities:
@@ -456,6 +457,11 @@ def main():
         "--quantized_model_path",
         default=None,
         help="Output path for pre-quantized model (used with --stage quantize)"
+    )
+    parser.add_argument(
+        "--skip_verification",
+        action="store_true",
+        help="Skip verification pass (saves 1 LLM call per facility; faster, slightly lower quality)"
     )
     
     args = parser.parse_args()

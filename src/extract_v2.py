@@ -47,7 +47,8 @@ from .config import (
     FACILITY_DETECTION_PROMPT, VERIFICATION_PROMPT,
     MAX_NEW_TOKENS, TEMPERATURE, TOP_P, REPETITION_PENALTY,
     MAX_CHUNKS_PER_FIELD_GROUP, FIELD_GROUP_MAX_TOKENS,
-    FIELD_GROUP_SYSTEM_PROMPTS
+    FIELD_GROUP_SYSTEM_PROMPTS,
+    MAX_SECTION_PASSES_PER_GROUP,
 )
 from .retriever import BM25Retriever, create_retriever_from_chunks, retrieve_for_field_group, load_embedding_model
 
@@ -1270,7 +1271,8 @@ def process_company_consolidated(
     tokenizer,
     retriever_type: str = "bm25",
     embedding_model=None,
-    embedding_tokenizer=None
+    embedding_tokenizer=None,
+    skip_verification: bool = False
 ) -> Optional[DocumentExtraction]:
     """
     Process ALL files for a company as a single consolidated document.
@@ -1330,10 +1332,13 @@ def process_company_consolidated(
             consolidated, retriever, facility_context, model, tokenizer
         )
         
-        # Verification pass (retriever-based for relevant context)
-        logger.info(f"  Step 4.{i+1}: Verifying extraction...")
-        verification = verify_extraction(all_extractions, consolidated.full_text, model, tokenizer, retriever=retriever)
-        all_extractions = apply_corrections(all_extractions, verification)
+        # Verification pass (optional; saves 1 LLM call per facility when skipped)
+        if skip_verification:
+            logger.info(f"  Step 4.{i+1}: Skipping verification (--skip_verification)")
+        else:
+            logger.info(f"  Step 4.{i+1}: Verifying extraction...")
+            verification = verify_extraction(all_extractions, consolidated.full_text, model, tokenizer, retriever=retriever)
+            all_extractions = apply_corrections(all_extractions, verification)
         
         # Consolidate facility data
         facility_data = consolidate_facility_data(all_extractions, facility_info)
@@ -1409,35 +1414,35 @@ def extract_with_full_coverage(
                 logger.info(f"      All {found_count} fields found with HIGH confidence, skipping section passes")
 
         # Strategy 2: Process document in sections for full coverage (skip if all found)
-        # Each section pass sends MAX_CHUNKS_PER_FIELD_GROUP chunks to stay within VRAM
-        if not all_found:
+        # Capped at MAX_SECTION_PASSES_PER_GROUP to avoid 10–30+ LLM calls per field group (speed).
+        if not all_found and MAX_SECTION_PASSES_PER_GROUP > 0:
             # Track which chunks were already covered by BM25 retrieval
             bm25_chunk_texts = set()
             if relevant_chunks:
                 for rc in relevant_chunks:
-                    # Use first 300 chars as fingerprint (enough to uniquely ID a chunk)
                     bm25_chunk_texts.add(rc[:300])
 
             chunk_limit = MAX_CHUNKS_PER_FIELD_GROUP
-
-            for section_start in range(0, len(consolidated.chunks), chunk_limit):
+            section_starts = list(range(0, len(consolidated.chunks), chunk_limit))
+            # Prefer sections not fully covered by BM25
+            section_candidates = []
+            for section_start in section_starts:
                 section_end = min(section_start + chunk_limit, len(consolidated.chunks))
                 section_chunks = [c['text'] for c in consolidated.chunks[section_start:section_end]]
+                if not section_chunks:
+                    continue
+                covered_count = sum(1 for sc in section_chunks if sc[:300] in bm25_chunk_texts)
+                if covered_count == len(section_chunks):
+                    continue  # Skip fully covered
+                section_candidates.append((section_start, section_end, section_chunks))
 
-                if section_chunks:
-                    # Check overlap: skip if ALL chunks in this section were in BM25 results
-                    covered_count = sum(
-                        1 for sc in section_chunks
-                        if sc[:300] in bm25_chunk_texts
-                    )
-                    if covered_count == len(section_chunks):
-                        continue  # Fully covered by BM25 pass
-
-                    result = extract_field_group(
-                        group_name, group_config, section_chunks,
-                        facility_context, model, tokenizer
-                    )
-                    extraction_results.append(result)
+            # Cap section passes to limit LLM calls (major speed win on A100)
+            for (section_start, section_end, section_chunks) in section_candidates[:MAX_SECTION_PASSES_PER_GROUP]:
+                result = extract_field_group(
+                    group_name, group_config, section_chunks,
+                    facility_context, model, tokenizer
+                )
+                extraction_results.append(result)
         
         # Merge results from all passes
         if extraction_results:

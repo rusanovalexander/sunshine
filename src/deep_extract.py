@@ -12,7 +12,7 @@ import json
 import logging
 from typing import List, Dict, Optional, Tuple
 
-from .config import FIELD_GROUPS, EXTRACTABLE_FIELDS
+from .config import FIELD_GROUPS, EXTRACTABLE_FIELDS, MAX_DEEP_EXTRACT_FIELDS_PER_FACILITY
 from .retriever import BM25Retriever
 
 logger = logging.getLogger(__name__)
@@ -307,6 +307,11 @@ def deep_extract_missing_fields(current_extraction: Dict,
 
     # Process POSSIBLY_PRESENT first (higher chance of success)
     all_targets = possibly_present_fields + missing_fields
+
+    # Cap total fields to avoid 50+ sequential LLM calls per facility (speed on A100)
+    if len(all_targets) > MAX_DEEP_EXTRACT_FIELDS_PER_FACILITY:
+        all_targets = all_targets[:MAX_DEEP_EXTRACT_FIELDS_PER_FACILITY]
+        logger.info(f"  Capped deep extraction to {MAX_DEEP_EXTRACT_FIELDS_PER_FACILITY} fields (config MAX_DEEP_EXTRACT_FIELDS_PER_FACILITY)")
 
     if not all_targets:
         logger.info("  No missing fields to deep extract")
