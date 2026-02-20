@@ -225,28 +225,37 @@ def run_extraction(args):
 
         try:
             # Stage 2-3: Consolidated extraction (merges ALL files for this company)
+            use_prebuilt_embeddings = not getattr(args, 'no_prebuilt_embeddings', False)
             extraction = process_company_consolidated(
                 company, company_manifest, model, tokenizer,
                 retriever_type=retriever_type,
                 embedding_model=embedding_model,
                 embedding_tokenizer=embedding_tokenizer,
-                skip_verification=getattr(args, 'skip_verification', False)
+                skip_verification=getattr(args, 'skip_verification', False),
+                use_prebuilt_embeddings=use_prebuilt_embeddings
             )
 
             if extraction and extraction.facilities:
                 # Stage 3.5: Deep extraction for missing fields
                 logger.info("  Running deep extraction for missing fields...")
 
-                # Rebuild consolidated chunks for deep extraction
-                consolidated = consolidate_company_documents(
-                    company, company_manifest, PREPROCESSED_DATA_DIR, tokenizer
-                )
-
+                # Rebuild consolidated chunks for deep extraction (or load prebuilt when embedding/hybrid)
+                from .config import USE_PREBUILT_EMBEDDINGS_IF_AVAILABLE, get_prebuilt_company_dir
+                from .consolidate import load_consolidated_document
+                prebuilt_dir = get_prebuilt_company_dir(company) if (use_prebuilt_embeddings and USE_PREBUILT_EMBEDDINGS_IF_AVAILABLE and retriever_type in ("embedding", "hybrid")) else None
+                if prebuilt_dir and os.path.exists(os.path.join(prebuilt_dir, "_COMBINED_CHUNKS.json")) and os.path.exists(os.path.join(prebuilt_dir, "_EMBEDDINGS.pt")):
+                    consolidated = load_consolidated_document(prebuilt_dir)
+                else:
+                    consolidated = consolidate_company_documents(
+                        company, company_manifest, PREPROCESSED_DATA_DIR, tokenizer
+                    )
                 if consolidated and consolidated.chunks:
+                    prebuilt_emb_path = os.path.join(prebuilt_dir, "_EMBEDDINGS.pt") if prebuilt_dir and os.path.exists(os.path.join(prebuilt_dir, "_EMBEDDINGS.pt")) else None
                     retriever = create_retriever_from_chunks(
                         consolidated.chunks, retriever_type=retriever_type,
                         embedding_model=embedding_model,
-                        embedding_tokenizer=embedding_tokenizer
+                        embedding_tokenizer=embedding_tokenizer,
+                        prebuilt_embeddings_path=prebuilt_emb_path
                     )
                     full_text = consolidated.full_text
 
@@ -410,9 +419,9 @@ def main():
     )
     parser.add_argument(
         "--stage",
-        choices=['all', 'preprocess', 'extract', 'report', 'compare', 'quantize'],
+        choices=['all', 'preprocess', 'preembed', 'extract', 'report', 'compare', 'quantize'],
         default='all',
-        help="Which stage to run ('quantize' = pre-quantize model for faster loading)"
+        help="Which stage to run ('preembed' = consolidate + embed chunks per company; 'quantize' = pre-quantize model)"
     )
     parser.add_argument(
         "--ocr_method",
@@ -463,6 +472,11 @@ def main():
         action="store_true",
         help="Skip verification pass (saves 1 LLM call per facility; faster, slightly lower quality)"
     )
+    parser.add_argument(
+        "--no-prebuilt-embeddings",
+        action="store_true",
+        help="Do not use prebuilt embeddings at extraction (always consolidate and encode in memory)"
+    )
     
     args = parser.parse_args()
     
@@ -485,6 +499,12 @@ def main():
                 run_preprocessing(args)
             else:
                 logger.info("Skipping preprocessing (--skip_preprocess)")
+
+        if args.stage == 'preembed':
+            from .preembed import run_preembed
+            run_preembed(company_filter=getattr(args, 'company', None))
+            logger.info("Preembed stage done.")
+            return 0
         
         if args.stage in ['all', 'extract']:
             success = run_extraction(args)

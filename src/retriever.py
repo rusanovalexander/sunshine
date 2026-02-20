@@ -9,10 +9,11 @@ Enhanced with financial synonym expansion for better
 recall on domain-specific terminology.
 """
 
+import os
 import re
 import math
 from collections import Counter
-from typing import List, Dict, Tuple, Set
+from typing import List, Dict, Tuple, Set, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -334,10 +335,16 @@ class EmbeddingRetriever:
             except (StopIteration, RuntimeError) as e:
                 logger.warning(f"  Could not offload embedding model: {e}")
 
-    def _encode(self, texts: List[str]):
-        """Encode a batch of texts into embeddings on current model device."""
+    def _encode(self, texts: List[str], max_length: int = None):
+        """Encode a batch of texts into embeddings on current model device.
+        max_length: max tokens per text (default from config or 2048). Qwen3-Embedding supports 32K context."""
         import torch
-
+        if max_length is None:
+            try:
+                from .config import EMBEDDING_MAX_LENGTH
+                max_length = EMBEDDING_MAX_LENGTH
+            except ImportError:
+                max_length = 2048
         # Use whatever device the model is currently on
         model_device = next(self.model.parameters()).device
 
@@ -345,7 +352,7 @@ class EmbeddingRetriever:
             texts,
             padding=True,
             truncation=True,
-            max_length=512,
+            max_length=max_length,
             return_tensors="pt"
         ).to(model_device)
 
@@ -396,6 +403,39 @@ class EmbeddingRetriever:
         """Search using a list of keywords (combined query)."""
         query = ' '.join(keywords)
         return self.search(query, top_k)
+
+    @classmethod
+    def from_pretrained_index(
+        cls,
+        documents: List[str],
+        embeddings_path: str,
+        model,
+        tokenizer,
+        batch_size: int = 32,
+        device: str = "cuda"
+    ) -> "EmbeddingRetriever":
+        """Build an EmbeddingRetriever from precomputed document embeddings (no index() call)."""
+        import torch
+        if not os.path.exists(embeddings_path):
+            raise FileNotFoundError(f"Embeddings file not found: {embeddings_path}")
+        if embeddings_path.endswith('.npy'):
+            import numpy as np
+            arr = np.load(embeddings_path)
+            doc_embeddings = torch.from_numpy(arr).float()
+        else:
+            try:
+                doc_embeddings = torch.load(embeddings_path, map_location='cpu', weights_only=True)
+            except TypeError:
+                doc_embeddings = torch.load(embeddings_path, map_location='cpu')
+        if not isinstance(doc_embeddings, torch.Tensor):
+            doc_embeddings = torch.tensor(doc_embeddings)
+        doc_embeddings = doc_embeddings.float()
+        doc_embeddings = torch.nn.functional.normalize(doc_embeddings, p=2, dim=1)
+        inst = cls(model=model, tokenizer=tokenizer, batch_size=batch_size, device=device)
+        inst.documents = documents
+        inst.doc_embeddings = doc_embeddings
+        logger.info(f"  Loaded prebuilt index: {len(documents)} docs, shape {doc_embeddings.shape}")
+        return inst
 
 
 # =====================================================================
@@ -514,7 +554,8 @@ def create_retriever_from_chunks(
     retriever_type: str = "bm25",
     embedding_model=None,
     embedding_tokenizer=None,
-    bm25_weight: float = 0.5
+    bm25_weight: float = 0.5,
+    prebuilt_embeddings_path: Optional[str] = None
 ):
     """
     Create a retriever from chunk data.
@@ -525,6 +566,7 @@ def create_retriever_from_chunks(
         embedding_model: Pre-loaded embedding model (required for embedding/hybrid)
         embedding_tokenizer: Pre-loaded embedding tokenizer
         bm25_weight: Weight for BM25 in hybrid mode (default 0.5)
+        prebuilt_embeddings_path: If set and file exists, use precomputed embeddings (embedding/hybrid only)
 
     Returns:
         Initialized retriever with same .search() / .search_with_keywords() interface
@@ -536,10 +578,22 @@ def create_retriever_from_chunks(
         retriever.index(texts)
         return retriever
 
-    elif retriever_type == "embedding":
+    use_prebuilt = (
+        prebuilt_embeddings_path is not None
+        and os.path.exists(prebuilt_embeddings_path)
+        and embedding_model is not None
+        and embedding_tokenizer is not None
+    )
+
+    if retriever_type == "embedding":
         if embedding_model is None:
             raise ValueError("embedding_model is required for 'embedding' retriever type. "
                              "Load it with load_embedding_model() first.")
+        if use_prebuilt:
+            retriever = EmbeddingRetriever.from_pretrained_index(
+                texts, prebuilt_embeddings_path, embedding_model, embedding_tokenizer
+            )
+            return retriever
         retriever = EmbeddingRetriever(
             model=embedding_model,
             tokenizer=embedding_tokenizer,
@@ -552,6 +606,14 @@ def create_retriever_from_chunks(
             raise ValueError("embedding_model is required for 'hybrid' retriever type. "
                              "Load it with load_embedding_model() first.")
         bm25 = BM25Retriever()
+        bm25.index(texts)
+        if use_prebuilt:
+            emb = EmbeddingRetriever.from_pretrained_index(
+                texts, prebuilt_embeddings_path, embedding_model, embedding_tokenizer
+            )
+            retriever = HybridRetriever(bm25, emb, bm25_weight=bm25_weight)
+            retriever.documents = texts
+            return retriever
         emb = EmbeddingRetriever(
             model=embedding_model,
             tokenizer=embedding_tokenizer,

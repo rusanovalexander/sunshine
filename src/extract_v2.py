@@ -36,6 +36,7 @@ from .gpu_optimizer import (
 # Company Document Consolidation
 from .consolidate import (
     consolidate_company_documents, save_consolidated_document,
+    load_consolidated_document,
     get_all_companies, create_extraction_plan, get_chunks_for_extraction,
     merge_extraction_results, ConsolidatedDocument
 )
@@ -49,6 +50,8 @@ from .config import (
     MAX_CHUNKS_PER_FIELD_GROUP, FIELD_GROUP_MAX_TOKENS,
     FIELD_GROUP_SYSTEM_PROMPTS,
     MAX_SECTION_PASSES_PER_GROUP,
+    USE_PREBUILT_EMBEDDINGS_IF_AVAILABLE,
+    get_prebuilt_company_dir,
 )
 from .retriever import BM25Retriever, create_retriever_from_chunks, retrieve_for_field_group, load_embedding_model
 
@@ -1272,7 +1275,8 @@ def process_company_consolidated(
     retriever_type: str = "bm25",
     embedding_model=None,
     embedding_tokenizer=None,
-    skip_verification: bool = False
+    skip_verification: bool = False,
+    use_prebuilt_embeddings: bool = True
 ) -> Optional[DocumentExtraction]:
     """
     Process ALL files for a company as a single consolidated document.
@@ -1281,15 +1285,30 @@ def process_company_consolidated(
     1. Information from all files is combined
     2. ALL text is processed by the LLM
     3. Related information across files is connected
+
+    When use_prebuilt_embeddings is True and embedding/hybrid retriever is used,
+    loads consolidated document and embeddings from preembed dir if present.
     """
     set_debug_company(company)
 
-    # Step 1: Consolidate all files for this company
-    logger.info(f"  Step 1: Consolidating all files...")
+    prebuilt_embeddings_path = None
+    consolidated = None
 
-    consolidated = consolidate_company_documents(
-        company, manifest, PREPROCESSED_DATA_DIR, tokenizer
-    )
+    if use_prebuilt_embeddings and USE_PREBUILT_EMBEDDINGS_IF_AVAILABLE and retriever_type in ("embedding", "hybrid"):
+        prebuilt_dir = get_prebuilt_company_dir(company)
+        chunks_path = os.path.join(prebuilt_dir, "_COMBINED_CHUNKS.json")
+        embeddings_path = os.path.join(prebuilt_dir, "_EMBEDDINGS.pt")
+        if os.path.exists(chunks_path) and os.path.exists(embeddings_path):
+            consolidated = load_consolidated_document(prebuilt_dir)
+            if consolidated is not None:
+                prebuilt_embeddings_path = embeddings_path
+                logger.info(f"  Step 1: Using prebuilt consolidated + embeddings from {prebuilt_dir}")
+
+    if consolidated is None:
+        logger.info(f"  Step 1: Consolidating all files...")
+        consolidated = consolidate_company_documents(
+            company, manifest, PREPROCESSED_DATA_DIR, tokenizer
+        )
 
     if not consolidated or not consolidated.chunks:
         logger.warning(f"  No content found for {company}")
@@ -1298,17 +1317,19 @@ def process_company_consolidated(
     logger.info(f"  Consolidated: {consolidated.total_tokens:,} tokens, "
                f"{len(consolidated.chunks)} chunks from {len(consolidated.source_files)} files")
 
-    # Save consolidated document for debugging
-    save_consolidated_document(consolidated, EXTRACTION_DIR)
+    if prebuilt_embeddings_path is None:
+        # Save consolidated document for debugging when not using prebuilt
+        save_consolidated_document(consolidated, EXTRACTION_DIR)
 
     # Detect document language for multilingual support
     detect_document_language(consolidated.full_text)
 
-    # Step 2: Create retriever from consolidated chunks
+    # Step 2: Create retriever from consolidated chunks (or prebuilt embeddings)
     retriever = create_retriever_from_chunks(
         consolidated.chunks, retriever_type=retriever_type,
         embedding_model=embedding_model,
-        embedding_tokenizer=embedding_tokenizer
+        embedding_tokenizer=embedding_tokenizer,
+        prebuilt_embeddings_path=prebuilt_embeddings_path
     )
     
     # Step 3: Detect facilities from the combined document

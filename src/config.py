@@ -6,6 +6,7 @@ Central configuration with field groups, prompts, and settings.
 """
 
 import os
+import re
 
 # =====================================================================
 # PATHS
@@ -21,6 +22,10 @@ CHUNKS_DIR = "chunks_v2"
 EXTRACTION_DIR = "extraction_outputs_v2"
 OUTPUT_CSV = "results_project_sunshine_v2.csv"
 
+# Pre-embed at preprocessing: consolidated + embeddings per company
+CONSOLIDATED_PREEMBED_SUBDIR = "consolidated"
+USE_PREBUILT_EMBEDDINGS_IF_AVAILABLE = True
+
 # =====================================================================
 # PROCESSING SETTINGS
 # =====================================================================
@@ -34,6 +39,7 @@ DPI = 300  # for PDF rendering
 # Retriever Settings
 RETRIEVER_TYPE = "bm25"  # Options: "bm25", "embedding", "hybrid"
 EMBEDDING_BATCH_SIZE = 32  # Batch size for encoding chunks during indexing
+EMBEDDING_MAX_LENGTH = 2048  # Max tokens per text when embedding. Qwen3-Embedding supports 32K; use >= CHUNK_SIZE so full chunks are embedded (not truncated).
 HYBRID_BM25_WEIGHT = 0.5  # Weight for BM25 in hybrid mode (embedding gets 1 - this)
 
 # LLM Settings
@@ -315,6 +321,12 @@ ALL_FIELDS = [
 # Fields that require extraction (excluding metadata)
 EXTRACTABLE_FIELDS = [f for f in ALL_FIELDS if f not in
                       ["Client Folder", "Source Files", "Comments", "Confidence Score"]]
+
+
+def get_prebuilt_company_dir(company: str) -> str:
+    """Path to prebuilt consolidated + embeddings dir for a company."""
+    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', company)
+    return os.path.join(PREPROCESSED_DATA_DIR, CONSOLIDATED_PREEMBED_SUBDIR, safe_name)
 
 # =====================================================================
 # ADAPTIVE MAX_NEW_TOKENS PER FIELD GROUP

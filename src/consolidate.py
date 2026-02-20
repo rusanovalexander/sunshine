@@ -19,6 +19,8 @@ import re
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 
+from .config import CHUNK_SIZE, CHUNK_OVERLAP
+
 logger = logging.getLogger(__name__)
 
 
@@ -124,13 +126,13 @@ def consolidate_company_documents(
     logger.info(f"  Combined document: {len(full_text):,} chars, ~{total_tokens:,} tokens")
     logger.info(f"  Source files: {len(source_files)}")
     
-    # Create chunks with overlap
+    # Create chunks with overlap (config-driven for consistency with preembed)
     chunks = create_comprehensive_chunks(
-        full_text, 
-        tokenizer, 
+        full_text,
+        tokenizer,
         source_references,
-        chunk_size=2000,  # 3 chunks × 2000 = 6K tokens → fits in 8K input limit with prompt
-        overlap=400
+        chunk_size=CHUNK_SIZE,
+        overlap=CHUNK_OVERLAP
     )
     
     return ConsolidatedDocument(
@@ -320,8 +322,69 @@ def save_consolidated_document(doc: ConsolidatedDocument, output_dir: str) -> st
         json.dump(meta, f, indent=2)
     
     logger.info(f"  Saved consolidated document to {company_dir}")
-    
+
     return chunks_path
+
+
+def save_consolidated_document_to_path(doc: ConsolidatedDocument, target_company_dir: str) -> None:
+    """Save consolidated document and chunks to an arbitrary directory (e.g. preembed consolidated dir)."""
+    os.makedirs(target_company_dir, exist_ok=True)
+    combined_text_path = os.path.join(target_company_dir, "_COMBINED_DOCUMENT.txt")
+    with open(combined_text_path, 'w', encoding='utf-8') as f:
+        f.write(doc.full_text)
+    chunks_path = os.path.join(target_company_dir, "_COMBINED_CHUNKS.json")
+    with open(chunks_path, 'w', encoding='utf-8') as f:
+        json.dump(doc.chunks, f, indent=2)
+    meta = {
+        "company": doc.company,
+        "source_files": doc.source_files,
+        "total_chars": doc.total_chars,
+        "total_tokens": doc.total_tokens,
+        "num_chunks": len(doc.chunks),
+        "source_references": [
+            {"file": r.file_name, "char_range": [r.start_char, r.end_char], "chunk_range": [r.start_chunk, r.end_chunk]}
+            for r in doc.source_references
+        ]
+    }
+    meta_path = os.path.join(target_company_dir, "_COMBINED_META.json")
+    with open(meta_path, 'w', encoding='utf-8') as f:
+        json.dump(meta, f, indent=2)
+    logger.debug(f"  Saved consolidated to {target_company_dir}")
+
+
+def load_consolidated_document(company_dir: str) -> Optional[ConsolidatedDocument]:
+    """Load a consolidated document from a directory (e.g. preembed consolidated/safe_company/).
+    Reads _COMBINED_DOCUMENT.txt, _COMBINED_CHUNKS.json, _COMBINED_META.json.
+    Returns None if any file is missing."""
+    combined_path = os.path.join(company_dir, "_COMBINED_DOCUMENT.txt")
+    chunks_path = os.path.join(company_dir, "_COMBINED_CHUNKS.json")
+    meta_path = os.path.join(company_dir, "_COMBINED_META.json")
+    if not os.path.exists(combined_path) or not os.path.exists(chunks_path) or not os.path.exists(meta_path):
+        return None
+    with open(combined_path, 'r', encoding='utf-8') as f:
+        full_text = f.read()
+    with open(chunks_path, 'r', encoding='utf-8') as f:
+        chunks = json.load(f)
+    with open(meta_path, 'r', encoding='utf-8') as f:
+        meta = json.load(f)
+    source_refs = []
+    for r in meta.get("source_references", []):
+        source_refs.append(SourceReference(
+            file_name=r["file"],
+            start_char=r["char_range"][0],
+            end_char=r["char_range"][1],
+            start_chunk=r["chunk_range"][0],
+            end_chunk=r["chunk_range"][1]
+        ))
+    return ConsolidatedDocument(
+        company=meta.get("company", ""),
+        full_text=full_text,
+        source_files=meta.get("source_files", []),
+        source_references=source_refs,
+        total_chars=meta.get("total_chars", len(full_text)),
+        total_tokens=meta.get("total_tokens", 0),
+        chunks=chunks
+    )
 
 
 def get_all_companies(manifest: List[Dict]) -> List[str]:
