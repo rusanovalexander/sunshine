@@ -505,6 +505,10 @@ def main():
             run_preembed(company_filter=getattr(args, 'company', None))
             logger.info("Preembed stage done.")
             return 0
+
+        if args.stage == 'all':
+            from .preembed import run_preembed
+            run_preembed(company_filter=getattr(args, 'company', None))
         
         if args.stage in ['all', 'extract']:
             success = run_extraction(args)
