@@ -15,6 +15,26 @@ MODEL_PATH = "/home/inghero/data/irwbds/llm/parc/qwen3_14B_bnb4"
 VLM_MODEL_PATH = "/home/inghero/data/irwbds/llm/parc/Qwen2.5-VL-3B-Instruct"
 EMBEDDING_MODEL_PATH = "/home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B"
 
+# =====================================================================
+# LLM BACKEND
+# =====================================================================
+# "llamacpp" uses a GGUF model via llama-cpp-python (faster, less VRAM)
+# "transformers" keeps the existing HuggingFace / bitsandbytes path
+LLM_BACKEND = "llamacpp"
+
+# Path to the GGUF file (only used when LLM_BACKEND == "llamacpp")
+GGUF_MODEL_PATH = "/home/inghero/data/irwbds/llm/parc/mistral-7b-instruct-v0.2.Q4_K_M.gguf"
+
+GGUF_N_GPU_LAYERS = -1    # -1 = offload all layers to GPU; 0 = CPU only
+GGUF_N_CTX = 12000        # context window: fits 3×2000 chunks + prompt + 1024 output
+GGUF_N_BATCH = 2048       # prompt processing parallelism
+
+# Stop tokens for generation — adjust per model family:
+#   Mistral/LLaMA-2:  ["</s>", "[/INST]"]
+#   Qwen2.5/Qwen3:    ["<|im_end|>"]
+#   LLaMA-3:          ["<|eot_id|>", "<|end_of_text|>"]
+GGUF_STOP_TOKENS = ["</s>", "[/INST]"]
+
 ARCHIVE_PATH = "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_2/clients_pf_2.zip"
 EXTRACTED_SOURCE_DIR = "extracted_source_data_v2"
 PREPROCESSED_DATA_DIR = "preprocessed_data_v2"

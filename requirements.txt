@@ -9,6 +9,11 @@ transformers>=4.40.0
 accelerate>=0.27.0
 bitsandbytes>=0.42.0
 
+# llama-cpp-python: fast GGUF inference (LLM_BACKEND = "llamacpp")
+# Install with CUDA support on the A100 server:
+#   CMAKE_ARGS="-DLLAMA_CUDA=on" pip install "llama-cpp-python>=0.2.90"
+llama-cpp-python>=0.2.90
+
 # Document Processing
 pymupdf>=1.24.0
 python-docx>=1.1.0

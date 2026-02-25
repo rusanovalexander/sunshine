@@ -240,11 +240,32 @@ class DocumentExtraction:
 # =====================================================================
 
 def initialize_model(model_path: str, use_flash_attention: bool = False):
-    """Load Qwen3-14B with 4-bit quantization.
+    """Load the LLM backend specified by config.LLM_BACKEND.
 
-    Uses the original proven config that works on A100 MIG 4g.20gb.
-    Falls through to load_llm_optimized only for pre-quantized models.
+    When LLM_BACKEND == "llamacpp":
+        Loads the GGUF file at config.GGUF_MODEL_PATH via llama-cpp-python.
+        model_path is ignored (use GGUF_MODEL_PATH in config.py).
+        Returns (LlamaCppModel, LlamaCppTokenizer).
+
+    When LLM_BACKEND == "transformers" (default):
+        Original HuggingFace path — loads Qwen3-14B with 4-bit BnB quantization.
+        Uses the original proven config that works on A100 MIG 4g.20gb.
+        Falls through to load_llm_optimized only for pre-quantized models.
     """
+    if config.LLM_BACKEND == "llamacpp":
+        from .llama_adapter import initialize_llm_llamacpp
+        logger.info(f"LLM backend: llamacpp — loading {config.GGUF_MODEL_PATH}")
+        try:
+            return initialize_llm_llamacpp(
+                model_path=config.GGUF_MODEL_PATH,
+                n_gpu_layers=config.GGUF_N_GPU_LAYERS,
+                n_ctx=config.GGUF_N_CTX,
+                n_batch=config.GGUF_N_BATCH,
+            )
+        except Exception as e:
+            logger.critical(f"Failed to load GGUF model: {e}")
+            return None, None
+
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
     logger.info(f"Loading model: {model_path}")
@@ -307,6 +328,32 @@ def llm_generate(prompt_messages: List[Dict], model, tokenizer,
         via _update_trace_parsed_result(trace_filepath, parsed_result).
     """
     t0 = _time.time()
+
+    # ── llama-cpp-python branch ────────────────────────────────────────────
+    if config.LLM_BACKEND == "llamacpp":
+        try:
+            output = model._llm.create_chat_completion(
+                messages=prompt_messages,
+                max_tokens=max_tokens,
+                temperature=0.0,          # greedy (equivalent to do_sample=False)
+                repeat_penalty=1.1,       # matches REPETITION_PENALTY
+                stop=config.GGUF_STOP_TOKENS,
+            )
+            response = output["choices"][0]["message"]["content"].strip()
+            input_tokens = output.get("usage", {}).get("prompt_tokens", 0)
+            elapsed = _time.time() - t0
+            logger.info(f"  LLM input: ~{input_tokens} tokens, max_new_tokens={max_tokens}")
+            _last_trace_path = _save_debug_trace(
+                step_name=step_name, messages=prompt_messages,
+                response=response, input_tokens=input_tokens,
+                elapsed_sec=elapsed, company=_current_company
+            )
+            return response, _last_trace_path
+        except Exception as e:
+            logger.error(f"llama-cpp generation error: {e}")
+            return "", ""
+    # ── end llama-cpp branch ───────────────────────────────────────────────
+
     try:
         text = tokenizer.apply_chat_template(
             prompt_messages,

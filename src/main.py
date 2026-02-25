@@ -91,15 +91,22 @@ def check_environment():
 def check_paths():
     """Verify required paths exist."""
     from .config import (
-        MODEL_PATH, VLM_MODEL_PATH, ARCHIVE_PATH, EXTRACTED_SOURCE_DIR
+        MODEL_PATH, VLM_MODEL_PATH, ARCHIVE_PATH, EXTRACTED_SOURCE_DIR,
+        LLM_BACKEND, GGUF_MODEL_PATH,
     )
-    
+
     logger.info("Checking paths...")
-    
-    if not os.path.exists(MODEL_PATH):
-        logger.error(f"  LLM model not found: {MODEL_PATH}")
-        return False
-    logger.info(f"  LLM model: OK")
+
+    if LLM_BACKEND == "llamacpp":
+        if not os.path.exists(GGUF_MODEL_PATH):
+            logger.error(f"  GGUF model not found: {GGUF_MODEL_PATH}")
+            return False
+        logger.info(f"  GGUF model: OK")
+    else:
+        if not os.path.exists(MODEL_PATH):
+            logger.error(f"  LLM model not found: {MODEL_PATH}")
+            return False
+        logger.info(f"  LLM model: OK")
     
     if not os.path.exists(VLM_MODEL_PATH):
         logger.warning(f"  VLM model not found: {VLM_MODEL_PATH} (OCR will be limited)")
