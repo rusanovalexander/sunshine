@@ -1,121 +1,105 @@
-virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/Ministral-14B-GGUF$ ls -lh /home/inghero/data/irwbds/llm/parc/Ministral-14B-GGUF/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
--rwx------. 1 inghero ubuntu 9.0G Feb 27 09:18 /home/inghero/data/irwbds/llm/parc/Ministral-14B-GGUF/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
-(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/Ministral-14B-GGUF$ cd ~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master
-(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master$ CMAKE_ARGS="-DGGML_CUDA=on" pip install --upgrade --force-reinstall llama-cpp-python --no-cache-dir
-Looking in indexes: https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/simple/
-Collecting llama-cpp-python
-  Downloading https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/packages/packages/e4/b4/c8cd17629ced0b9644a71d399a91145aedef109c0333443bef015e45b704/llama_cpp_python-0.3.16.tar.gz (50.7 MB)
-     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 50.7/50.7 MB 167.2 MB/s  0:00:00
-  Installing build dependencies ... done
-  Getting requirements to build wheel ... done
-  Preparing metadata (pyproject.toml) ... done
-Collecting typing-extensions>=4.5.0 (from llama-cpp-python)
-  Downloading https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/packages/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl (44 kB)
-Collecting numpy>=1.20.0 (from llama-cpp-python)
-  Downloading https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/packages/packages/b4/63/3de6a34ad7ad6646ac7d2f55ebc6ad439dbbf9c4370017c50cf403fb19b5/numpy-2.2.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (16.8 MB)
-     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.8/16.8 MB 313.7 MB/s  0:00:00
-Collecting diskcache>=5.6.1 (from llama-cpp-python)
-  Downloading https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/packages/packages/3f/27/4570e78fc0bf5ea0ca45eb1de3818a23787af9b390c0b0a0033a1b8236f9/diskcache-5.6.3-py3-none-any.whl (45 kB)
-Collecting jinja2>=2.11.3 (from llama-cpp-python)
-  Downloading https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/packages/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl (134 kB)
-Collecting MarkupSafe>=2.0 (from jinja2>=2.11.3->llama-cpp-python)
-  Downloading https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/packages/packages/af/cd/ce6e848bbf2c32314c9b237839119c5a564a59725b53157c856e90937b7a/markupsafe-3.0.3-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (20 kB)
-Building wheels for collected packages: llama-cpp-python
-  Building wheel for llama-cpp-python (pyproject.toml) ... done
-  Created wheel for llama-cpp-python: filename=llama_cpp_python-0.3.16-cp310-cp310-linux_x86_64.whl size=36225272 sha256=b9b0fba4ea886f606ed547377e375eb234206094c93d7fa83dba68b75181694a
-  Stored in directory: /tmp/pip-ephem-wheel-cache-slyydo_l/wheels/e6/0d/da/cf41fa4ea4eff7a567c677f6b2bc283d2ed7f61ce28b490165
-Successfully built llama-cpp-python
-Installing collected packages: typing-extensions, numpy, MarkupSafe, diskcache, jinja2, llama-cpp-python
-  Attempting uninstall: typing-extensions
-    Found existing installation: typing_extensions 4.15.0
-    Not uninstalling typing-extensions at /layers/paketo-buildpacks_cpython/cpython/lib/python3.10/site-packages, outside environment /layers/dap-buildpacks_pip-install/site-packages/virtual-env
-    Can't uninstall 'typing_extensions'. No files were found to uninstall.
-  Attempting uninstall: numpy
-    Found existing installation: numpy 2.2.6
-    Uninstalling numpy-2.2.6:
-      Successfully uninstalled numpy-2.2.6
-  Attempting uninstall: MarkupSafe
-    Found existing installation: MarkupSafe 3.0.3
-    Not uninstalling markupsafe at /layers/dap-buildpacks_jupyter/jupyter/python/lib/python3.10/site-packages, outside environment /layers/dap-buildpacks_pip-install/site-packages/virtual-env
-    Can't uninstall 'MarkupSafe'. No files were found to uninstall.
-  Attempting uninstall: diskcache
-    Found existing installation: diskcache 5.6.3
-    Uninstalling diskcache-5.6.3:
-      Successfully uninstalled diskcache-5.6.3
-  Attempting uninstall: jinja2
-    Found existing installation: Jinja2 3.1.6
-    Not uninstalling jinja2 at /layers/dap-buildpacks_jupyter/jupyter/python/lib/python3.10/site-packages, outside environment /layers/dap-buildpacks_pip-install/site-packages/virtual-env
-    Can't uninstall 'Jinja2'. No files were found to uninstall.
-  Attempting uninstall: llama-cpp-python
-    Found existing installation: llama_cpp_python 0.3.16
-    Uninstalling llama_cpp_python-0.3.16:
-      Successfully uninstalled llama_cpp_python-0.3.16
-Successfully installed MarkupSafe-3.0.3 diskcache-5.6.3 jinja2-3.1.6 llama-cpp-python-0.3.16 numpy-2.2.6 typing-extensions-4.15.0
-
-[notice] A new release of pip is available: 25.2 -> 26.0.1
-[notice] To update, run: pip install --upgrade pip
-(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master$ python -m src.main   --stage all   --ocr_method easyocr   --retriever embedding   --company "ABP Acquisitions UK Limited_39306327"
-
-    ╔═══════════════════════════════════════════════════════════════╗
-    ║     PROJECT SUNSHINE - Document Extraction Pipeline v2        ║
-    ║     Multi-Pass Evidence-Based Extraction System               ║
-    ╠═══════════════════════════════════════════════════════════════╣
-    ║  Stage 1: Document Preprocessing                              ║
-    ║  Stage 2: Multi-Pass Field Group Extraction                   ║
-    ║  Stage 3: Deep Field Extraction (Fallback)                    ║
-    ║  Stage 4: Verification & Consolidation                        ║
-    ╚═══════════════════════════════════════════════════════════════╝
-    
-14:04:13 - Pipeline - INFO - Checking environment...
-14:04:13 - Pipeline - INFO -   GPU: NVIDIA A100-PCIE-40GB MIG 4g.20gb (21.1 GB)
-14:04:13 - Pipeline - INFO -   GPU Memory: 21.1GB free / 21.1GB total
-14:04:15 - Pipeline - INFO -   All required packages available
-14:04:15 - Pipeline - INFO - Checking paths...
-14:04:15 - Pipeline - INFO -   GGUF model: OK
-14:04:15 - Pipeline - INFO -   VLM model: OK
-14:04:16 - Pipeline - INFO -   Source data: OK
-14:04:16 - Pipeline - INFO - 
+(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master$ python check_model.py
 ============================================================
-14:04:16 - Pipeline - INFO - STAGE 1: DOCUMENT PREPROCESSING
-14:04:16 - Pipeline - INFO - ============================================================
-14:04:42 - Pipeline - INFO - === Company: ABP Acquisitions UK Limited_39306327 ===
-14:04:43 - Pipeline - INFO - Skipping (exists): Transfer Cert - fully executed CS.pdf
-14:04:43 - Pipeline - INFO - Skipping (exists): Cook_-_Fully_executed_SFA.pdf
-14:04:44 - Pipeline - INFO - Skipping (exists): Transfer certificate - fully executed JPM.pdf
-14:04:44 - Pipeline - INFO - Preprocessing complete. 3 files in manifest.
-14:04:44 - Pipeline - INFO - Unloading VLM to free GPU memory...
-14:04:45 - Pipeline - INFO - After VLM unload: GPU Memory: 0.00GB allocated, 0.00GB reserved, 21.07GB free (0.0% used)
-14:04:45 - Pipeline - INFO - Loading tokenizer for consolidation chunking...
-14:04:50 - Pipeline - INFO - Loading embedding model...
-14:04:50 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B
-`torch_dtype` is deprecated! Use `dtype` instead!
-Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 310/310 [00:16<00:00, 19.18it/s, Materializing param=norm.weight]
-14:05:25 - Pipeline - INFO -   Embedding model loaded on cuda
-14:05:25 - Pipeline - INFO - Preembed: ABP Acquisitions UK Limited_39306327
-14:05:25 - Pipeline - INFO - Consolidating 3 files for ABP Acquisitions UK Limited_39306327
-14:05:26 - Pipeline - INFO -   Combined document: 304,718 chars, ~75,754 tokens
-14:05:26 - Pipeline - INFO -   Source files: 3
-14:05:26 - Pipeline - INFO -   Creating chunks: 75754 tokens, size=2000, overlap=400
-14:05:27 - Pipeline - INFO -   Created 48 chunks covering entire document
-14:05:27 - Pipeline - INFO -   ✓ Complete coverage verified: 100.00%
-14:05:32 - Pipeline - INFO -   Saved 48 chunk embeddings to preprocessed_data/consolidated/ABP_Acquisitions_UK_Limited_39306327/_EMBEDDINGS.pt
-14:05:32 - Pipeline - INFO - Preembed stage complete.
-14:05:32 - Pipeline - INFO - 
+  GGUF Model Load Diagnostic
 ============================================================
-14:05:32 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION (consolidated per company)
-14:05:32 - Pipeline - INFO - ============================================================
-14:05:35 - Pipeline - INFO - Retriever type: embedding
-14:05:35 - Pipeline - INFO - Loading LLM model...
-14:05:35 - Pipeline - INFO - LLM backend: llamacpp — loading /home/inghero/data/irwbds/llm/parc/Ministral-14B-GGUF/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
-14:05:35 - Pipeline - INFO - Loading GGUF model: /home/inghero/data/irwbds/llm/parc/Ministral-14B-GGUF/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
-14:05:35 - Pipeline - INFO -   n_gpu_layers=-1, n_ctx=12000, n_batch=2048
-14:05:36 - Pipeline - CRITICAL - Failed to load GGUF model: Failed to load model from file: /home/inghero/data/irwbds/llm/parc/Ministral-14B-GGUF/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
-Exception ignored in: <function LlamaModel.__del__ at 0x7ef6f2b4c040>
+
+[1] File check
+    Path : /home/inghero/data/irwbds/llm/parc/Ministral-14B-GGUF/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
+    Size : 8.96 GB
+    Read permission: yes
+
+[2] Import check
+    llama-cpp-python version: 0.3.16
+
+[3] CUDA / GPU check
+    GPU: NVIDIA A100-PCIE-40GB, [Insufficient Permissions], [Insufficient Permissions]
+
+[4] Model load check
+    n_gpu_layers=-1, n_ctx=512, n_batch=512
+ggml_cuda_init: GGML_CUDA_FORCE_MMQ:    no
+ggml_cuda_init: GGML_CUDA_FORCE_CUBLAS: no
+ggml_cuda_init: found 1 CUDA devices:
+  Device 0: NVIDIA A100-PCIE-40GB MIG 4g.20gb, compute capability 8.0, VMM: yes
+llama_model_load_from_file_impl: using device CUDA0 (NVIDIA A100-PCIE-40GB MIG 4g.20gb) - 19718 MiB free
+llama_model_loader: loaded meta data with 53 key-value pairs and 363 tensors from /home/inghero/data/irwbds/llm/parc/Ministral-14B-GGUF/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = mistral3
+llama_model_loader: - kv   1:                               general.type str              = model
+llama_model_loader: - kv   2:                               general.name str              = ministral-14B-Instruct-2512
+llama_model_loader: - kv   3:                            general.version str              = 3.0
+llama_model_loader: - kv   4:                       general.organization str              = Mistral AI
+llama_model_loader: - kv   5:                           general.finetune str              = 2512
+llama_model_loader: - kv   6:                           general.basename str              = Ministral
+llama_model_loader: - kv   7:                        general.description str              = The Ministral 3 family is designed fo...
+llama_model_loader: - kv   8:                         general.size_label str              = 14B
+llama_model_loader: - kv   9:                            general.license str              = apache-2.0
+llama_model_loader: - kv  10:                                general.url str              = https://huggingface.co/mistralai/Mini...
+llama_model_loader: - kv  11:                           general.repo_url str              = https://huggingface.co/mistralai/Mini...
+llama_model_loader: - kv  12:                   general.base_model.count u32              = 1
+llama_model_loader: - kv  13:                  general.base_model.0.name str              = Ministral 3 14B Base 2512
+llama_model_loader: - kv  14:               general.base_model.0.version str              = 2512
+llama_model_loader: - kv  15:          general.base_model.0.organization str              = Mistralai
+llama_model_loader: - kv  16:              general.base_model.0.repo_url str              = https://huggingface.co/mistralai/Mini...
+llama_model_loader: - kv  17:                               general.tags arr[str,1]       = ["mistral-common"]
+llama_model_loader: - kv  18:                          general.languages arr[str,11]      = ["en", "fr", "es", "de", "it", "pt", ...
+llama_model_loader: - kv  19:                       mistral3.block_count u32              = 40
+llama_model_loader: - kv  20:                    mistral3.context_length u32              = 262144
+llama_model_loader: - kv  21:                  mistral3.embedding_length u32              = 5120
+llama_model_loader: - kv  22:               mistral3.feed_forward_length u32              = 16384
+llama_model_loader: - kv  23:              mistral3.attention.head_count u32              = 32
+llama_model_loader: - kv  24:           mistral3.attention.head_count_kv u32              = 8
+llama_model_loader: - kv  25:                    mistral3.rope.freq_base f32              = 1000000000.000000
+llama_model_loader: - kv  26:  mistral3.attention.layer_norm_rms_epsilon f32              = 0.000010
+llama_model_loader: - kv  27:              mistral3.attention.key_length u32              = 128
+llama_model_loader: - kv  28:            mistral3.attention.value_length u32              = 128
+llama_model_loader: - kv  29:              mistral3.rope.dimension_count u32              = 128
+llama_model_loader: - kv  30:                 mistral3.rope.scaling.type str              = yarn
+llama_model_loader: - kv  31:               mistral3.rope.scaling.factor f32              = 16.000000
+llama_model_loader: - kv  32:       mistral3.rope.scaling.yarn_beta_fast f32              = 32.000000
+llama_model_loader: - kv  33:       mistral3.rope.scaling.yarn_beta_slow f32              = 1.000000
+llama_model_loader: - kv  34:  mistral3.rope.scaling.yarn_log_multiplier f32              = 1.000000
+llama_model_loader: - kv  35: mistral3.rope.scaling.original_context_length u32              = 16384
+llama_model_loader: - kv  36:       mistral3.attention.temperature_scale f32              = 0.100000
+llama_model_loader: - kv  37:                       tokenizer.ggml.model str              = gpt2
+llama_model_loader: - kv  38:                         tokenizer.ggml.pre str              = tekken
+Exception ignored on calling ctypes callback function: <function llama_log_callback at 0x7fcbd3dbfeb0>
+Traceback (most recent call last):
+  File "/layers/dap-buildpacks_pip-install/site-packages/virtual-env/lib/python3.10/site-packages/llama_cpp/_logger.py", line 39, in llama_log_callback
+    print(text.decode("utf-8"), end="", flush=True, file=sys.stderr)
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xc4 in position 128: invalid continuation byte
+llama_model_loader: - kv  40:                tokenizer.ggml.bos_token_id u32              = 1
+llama_model_loader: - kv  41:                tokenizer.ggml.eos_token_id u32              = 2
+llama_model_loader: - kv  42:            tokenizer.ggml.unknown_token_id u32              = 0
+llama_model_loader: - kv  43:            tokenizer.ggml.padding_token_id u32              = 11
+llama_model_loader: - kv  44:                      tokenizer.ggml.tokens arr[str,131072]  = ["<unk>", "<s>", "</s>", "[INST]", "[...
+llama_model_loader: - kv  45:                      tokenizer.ggml.scores arr[i32,131072]  = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...
+llama_model_loader: - kv  46:                  tokenizer.ggml.token_type arr[i32,131072]  = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, ...
+llama_model_loader: - kv  47:                        mistral3.vocab_size u32              = 131072
+llama_model_loader: - kv  48:               tokenizer.ggml.add_bos_token bool             = true
+llama_model_loader: - kv  49:               tokenizer.ggml.add_eos_token bool             = false
+llama_model_loader: - kv  50:                    tokenizer.chat_template str              = {#- Default system message if no syst...
+llama_model_loader: - kv  51:               general.quantization_version u32              = 2
+llama_model_loader: - kv  52:                          general.file_type u32              = 17
+llama_model_loader: - type  f32:   81 tensors
+llama_model_loader: - type q5_K:  241 tensors
+llama_model_loader: - type q6_K:   41 tensors
+print_info: file format = GGUF V3 (latest)
+print_info: file type   = Q5_K - Medium
+print_info: file size   = 8.95 GiB (5.69 BPW) 
+llama_model_load: error loading model: error loading model architecture: unknown model architecture: 'mistral3'
+llama_model_load_from_file_impl: failed to load model
+    ERROR loading model: Failed to load model from file: /home/inghero/data/irwbds/llm/parc/Ministral-14B-GGUF/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
+Exception ignored in: <function LlamaModel.__del__ at 0x7fcbd3c38040>
 Traceback (most recent call last):
   File "/layers/dap-buildpacks_pip-install/site-packages/virtual-env/lib/python3.10/site-packages/llama_cpp/_internals.py", line 86, in __del__
     self.close()
   File "/layers/dap-buildpacks_pip-install/site-packages/virtual-env/lib/python3.10/site-packages/llama_cpp/_internals.py", line 78, in close
     if self.sampler is not None:
 AttributeError: 'LlamaModel' object has no attribute 'sampler'
-14:05:36 - Pipeline - ERROR - Failed to load model
-14:05:36 - Pipeline - ERROR - Extraction failed
+
+FAILED: model did not load.
+
+Troubleshooting tips:
+  - Try --n-gpu-layers 0 to rule out a CUDA/VRAM issue
+  - Try --n-ctx 512 if context size causes OOM
+  - Re-download the GGUF if the file size looks wrong
