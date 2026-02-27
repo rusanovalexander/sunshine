@@ -11,7 +11,19 @@ bitsandbytes>=0.42.0
 
 # llama-cpp-python: fast GGUF inference (LLM_BACKEND = "llamacpp")
 # Install with CUDA support on the A100 server:
-#   CMAKE_ARGS="-DLLAMA_CUDA=on" pip install "llama-cpp-python>=0.2.90"
+#   CMAKE_ARGS="-DGGML_CUDA=on" pip install "llama-cpp-python>=0.2.90"
+#
+# IMPORTANT — llama-cpp-python 0.3.16 (latest as of Aug 2025) bundles a
+# llama.cpp that does NOT support newer architectures such as 'mistral3'
+# (used by Ministral models released Dec 2025+).
+# If you see "unknown model architecture: 'mistral3'" at runtime, build
+# llama-cpp-python from source with the latest llama.cpp:
+#
+#   git clone https://github.com/abetlen/llama-cpp-python.git
+#   cd llama-cpp-python
+#   git submodule update --init --recursive
+#   cd vendor/llama.cpp && git pull origin master && cd ../..
+#   CMAKE_ARGS="-DGGML_CUDA=on" pip install -e . --no-cache-dir
 llama-cpp-python>=0.2.90
 
 # Document Processing

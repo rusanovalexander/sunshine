@@ -18,9 +18,45 @@ which ``LlamaCppTokenizer`` satisfies via llama-cpp's ``tokenize()`` /
 from __future__ import annotations
 
 import logging
-from typing import List, Tuple
+import struct
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+# Architectures known to require a llama.cpp build newer than what
+# llama-cpp-python 0.3.16 (released Aug 2025) bundles.
+_ARCH_NEEDS_NEWER_BUILD = {"mistral3"}
+
+
+def _read_gguf_architecture(path: str) -> Optional[str]:
+    """
+    Read ``general.architecture`` from a GGUF file without loading the model.
+
+    The KV section starts immediately after the fixed 24-byte header
+    (magic 4B + version 4B + n_tensors 8B + n_kv 8B).  The first KV pair
+    is always ``general.architecture`` for well-formed GGUF files.
+
+    Returns the architecture string, or None if the file cannot be parsed.
+    """
+    try:
+        with open(path, "rb") as f:
+            magic = f.read(4)
+            if magic != b"GGUF":
+                return None
+            _version = struct.unpack("<I", f.read(4))[0]
+            _n_tensors = struct.unpack("<Q", f.read(8))[0]
+            _n_kv = struct.unpack("<Q", f.read(8))[0]
+            # First KV: key length (8B) + key bytes + value type (4B) + value
+            key_len = struct.unpack("<Q", f.read(8))[0]
+            key = f.read(key_len).decode("utf-8", errors="replace")
+            val_type = struct.unpack("<I", f.read(4))[0]
+            if val_type != 8:           # 8 == GGUF_TYPE_STRING
+                return None
+            val_len = struct.unpack("<Q", f.read(8))[0]
+            arch = f.read(val_len).decode("utf-8", errors="replace")
+            return arch if key == "general.architecture" else None
+    except Exception:
+        return None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -211,26 +247,67 @@ def initialize_llm_llamacpp(
     ---------------
     Install with CUDA support on the A100 server::
 
-        CMAKE_ARGS="-DLLAMA_CUDA=on" pip install "llama-cpp-python>=0.2.90"
+        CMAKE_ARGS="-DGGML_CUDA=on" pip install "llama-cpp-python>=0.2.90"
+
+    If the model uses an architecture not yet supported by the bundled llama.cpp
+    (e.g. ``mistral3`` in llama-cpp-python 0.3.16, released Aug 2025), build
+    from source against the latest llama.cpp::
+
+        git clone https://github.com/abetlen/llama-cpp-python.git
+        cd llama-cpp-python
+        git submodule update --init --recursive
+        cd vendor/llama.cpp && git pull origin master && cd ../..
+        CMAKE_ARGS="-DGGML_CUDA=on" pip install -e . --no-cache-dir
     """
     try:
         from llama_cpp import Llama
     except ImportError as exc:
         raise ImportError(
             "llama-cpp-python is not installed.  Install it with:\n"
-            '  CMAKE_ARGS="-DLLAMA_CUDA=on" pip install "llama-cpp-python>=0.2.90"'
+            '  CMAKE_ARGS="-DGGML_CUDA=on" pip install "llama-cpp-python>=0.2.90"'
         ) from exc
+
+    # Pre-flight: check if the GGUF architecture is supported by this build.
+    arch = _read_gguf_architecture(model_path)
+    if arch in _ARCH_NEEDS_NEWER_BUILD:
+        import llama_cpp
+        ver = getattr(llama_cpp, "__version__", "unknown")
+        raise RuntimeError(
+            f"GGUF architecture '{arch}' is not supported by the llama.cpp "
+            f"bundled in llama-cpp-python {ver} (released Aug 2025).\n\n"
+            f"llama.cpp master supports '{arch}', but there is no newer "
+            f"llama-cpp-python release yet.  Build from source:\n\n"
+            f"  git clone https://github.com/abetlen/llama-cpp-python.git\n"
+            f"  cd llama-cpp-python\n"
+            f"  git submodule update --init --recursive\n"
+            f"  cd vendor/llama.cpp && git pull origin master && cd ../..\n"
+            f"  CMAKE_ARGS=\"-DGGML_CUDA=on\" pip install -e . --no-cache-dir\n\n"
+            f"Or on a network-restricted server, build llama.cpp standalone\n"
+            f"and point to its shared library via LLAMA_CPP_LIB env var."
+        )
 
     logger.info(f"Loading GGUF model: {model_path}")
     logger.info(f"  n_gpu_layers={n_gpu_layers}, n_ctx={n_ctx}, n_batch={n_batch}")
 
-    llm = Llama(
-        model_path=model_path,
-        n_gpu_layers=n_gpu_layers,
-        n_ctx=n_ctx,
-        n_batch=n_batch,
-        verbose=verbose,
-    )
+    try:
+        llm = Llama(
+            model_path=model_path,
+            n_gpu_layers=n_gpu_layers,
+            n_ctx=n_ctx,
+            n_batch=n_batch,
+            verbose=verbose,
+        )
+    except Exception as exc:
+        msg = str(exc)
+        if "unknown model architecture" in msg:
+            arch_hint = msg.split("'")[1] if "'" in msg else "unknown"
+            raise RuntimeError(
+                f"llama.cpp does not recognise the model architecture '{arch_hint}'.\n"
+                f"The bundled llama.cpp is too old for this GGUF file.\n"
+                f"Build llama-cpp-python from source with the latest llama.cpp "
+                f"(see docstring above for steps)."
+            ) from exc
+        raise
 
     model = LlamaCppModel(llm)
     tokenizer = LlamaCppTokenizer(llm)
