@@ -1,34 +1,54 @@
-16:08:51 - Pipeline - INFO - Checking environment...
-16:08:51 - Pipeline - INFO -   GPU: NVIDIA A100-PCIE-40GB MIG 4g.20gb (21.1 GB)
-16:08:51 - Pipeline - INFO -   GPU Memory: 21.1GB free / 21.1GB total
-16:08:59 - Pipeline - INFO -   All required packages available
-16:08:59 - Pipeline - INFO - Checking paths...
-16:08:59 - Pipeline - INFO -   LLM model: OK
-16:08:59 - Pipeline - INFO -   VLM model: OK
-16:09:00 - Pipeline - INFO -   Source data: OK
-16:09:00 - Pipeline - INFO - 
+13:15:47 - Pipeline - INFO -   Embedding model loaded on cuda
+13:15:47 - Pipeline - INFO - Preembed: ABP Acquisitions UK Limited_39306327
+13:15:47 - Pipeline - INFO - Consolidating 3 files for ABP Acquisitions UK Limited_39306327
+13:15:47 - Pipeline - INFO -   Combined document: 304,718 chars, ~75,754 tokens
+13:15:47 - Pipeline - INFO -   Source files: 3
+13:15:47 - Pipeline - INFO -   Creating chunks: 75754 tokens, size=2000, overlap=400
+13:15:48 - Pipeline - INFO -   Created 48 chunks covering entire document
+13:15:48 - Pipeline - INFO -   ✓ Complete coverage verified: 100.00%
+13:15:53 - Pipeline - INFO -   Saved 48 chunk embeddings to preprocessed_data/consolidated/ABP_Acquisitions_UK_Limited_39306327/_EMBEDDINGS.pt
+13:15:53 - Pipeline - INFO - Preembed stage complete.
+13:15:54 - Pipeline - INFO - 
 ============================================================
-16:09:00 - Pipeline - INFO - STAGE 1: DOCUMENT PREPROCESSING
-16:09:00 - Pipeline - INFO - ============================================================
-16:09:15 - Pipeline - INFO - Extracting archive: /home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_2/clients_pf_2.zip
-16:10:35 - Pipeline - INFO - === Company: ABP Acquisitions UK Limited_39306327 ===
-16:10:36 - Pipeline - INFO - Processing: Transfer Cert - fully executed CS.pdf
-16:10:50 - Pipeline - INFO - Processing: Transfer certificate - fully executed JPM.pdf
-16:11:03 - Pipeline - INFO - Processing: Cook_-_Fully_executed_SFA.pdf
-16:21:40 - Pipeline - INFO - Preprocessing complete. 3 files in manifest.
-16:21:40 - Pipeline - INFO - Unloading VLM to free GPU memory...
-16:21:41 - Pipeline - INFO - After VLM unload: GPU Memory: 0.01GB allocated, 0.02GB reserved, 21.05GB free (0.1% used)
-16:21:41 - Pipeline - INFO - 
-============================================================
-16:21:41 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION
-16:21:41 - Pipeline - INFO - ============================================================
-16:21:43 - Pipeline - INFO - Retriever type: embedding
-16:21:43 - Pipeline - INFO - Loading LLM model...
-16:21:43 - Pipeline - INFO - Loading model: /home/inghero/data/irwbds/llm/parc/qwen3_14B
-16:21:43 - Pipeline - INFO - Before model load: GPU Memory: 0.01GB allocated, 0.02GB reserved, 21.05GB free (0.1% used)
-16:21:45 - Pipeline - INFO - Loading LLM from /home/inghero/data/irwbds/llm/parc/qwen3_14B
-16:21:45 - Pipeline - INFO -   Config: 4-bit NF4, double quant, flash_attention_2, max 16.0GB
-`torch_dtype` is deprecated! Use `dtype` instead!
-16:23:45 - Pipeline - CRITICAL - Failed to load model: /layers/dap-buildpacks_pip-install/site-packages/virtual-env/lib/python3.10/site-packages/flash_attn_2_cuda.cpython-310-x86_64-linux-gnu.so: undefined symbol: _ZN3c104cuda29c10_cuda_check_implementationEiPKcS2_ib
-16:23:45 - Pipeline - ERROR - Failed to load model
-16:23:45 - Pipeline - ERROR - Extraction failed
+13:15:54 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION (consolidated per company)
+13:15:54 - Pipeline - INFO - ============================================================
+13:15:56 - Pipeline - INFO - Retriever type: embedding
+13:15:56 - Pipeline - INFO - Loading LLM model...
+13:15:56 - Pipeline - CRITICAL - Pipeline failed: name 'config' is not defined
+Traceback (most recent call last):
+  File "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master/src/main.py", line 521, in main
+    success = run_extraction(args)
+  File "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master/src/main.py", line 194, in run_extraction
+    model, tokenizer = initialize_model(MODEL_PATH, args.flash_attention)
+  File "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master/src/extract_v2.py", line 255, in initialize_model
+    if config.LLM_BACKEND == "llamacpp":
+NameError: name 'config' is not defined
+(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master$ python -m src.main   --stage all   --ocr_method easyocr   --retriever embedding   --company "ABP Acquisitions UK Limited_39306327"
+Traceback (most recent call last):
+  File "/layers/paketo-buildpacks_cpython/cpython/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/layers/paketo-buildpacks_cpython/cpython/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master/src/main.py", line 17, in <module>
+    import config
+ModuleNotFoundError: No module named 'config'
+(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master$ python -m src.main   --stage all   --ocr_method easyocr   --retriever embedding   --company "ABP Acquisitions UK Limited_39306327"
+Traceback (most recent call last):
+  File "/layers/paketo-buildpacks_cpython/cpython/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/layers/paketo-buildpacks_cpython/cpython/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master/src/main.py", line 17, in <module>
+    import config
+ModuleNotFoundError: No module named 'config'
+(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master$ python -m src.main   --stage all   --ocr_method easyocr   --retriever embedding   --company "ABP Acquisitions UK Limited_39306327"
+Traceback (most recent call last):
+  File "/layers/paketo-buildpacks_cpython/cpython/lib/python3.10/runpy.py", line 187, in _run_module_as_main
+    mod_name, mod_spec, code = _get_module_details(mod_name, _Error)
+  File "/layers/paketo-buildpacks_cpython/cpython/lib/python3.10/runpy.py", line 110, in _get_module_details
+    __import__(pkg_name)
+  File "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master/src/__init__.py", line 11
+    import .config
+           ^
+SyntaxError: invalid syntax
+(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master$ 
