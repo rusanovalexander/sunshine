@@ -1,54 +1,121 @@
-13:15:47 - Pipeline - INFO -   Embedding model loaded on cuda
-13:15:47 - Pipeline - INFO - Preembed: ABP Acquisitions UK Limited_39306327
-13:15:47 - Pipeline - INFO - Consolidating 3 files for ABP Acquisitions UK Limited_39306327
-13:15:47 - Pipeline - INFO -   Combined document: 304,718 chars, ~75,754 tokens
-13:15:47 - Pipeline - INFO -   Source files: 3
-13:15:47 - Pipeline - INFO -   Creating chunks: 75754 tokens, size=2000, overlap=400
-13:15:48 - Pipeline - INFO -   Created 48 chunks covering entire document
-13:15:48 - Pipeline - INFO -   ✓ Complete coverage verified: 100.00%
-13:15:53 - Pipeline - INFO -   Saved 48 chunk embeddings to preprocessed_data/consolidated/ABP_Acquisitions_UK_Limited_39306327/_EMBEDDINGS.pt
-13:15:53 - Pipeline - INFO - Preembed stage complete.
-13:15:54 - Pipeline - INFO - 
+virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/Ministral-14B-GGUF$ ls -lh /home/inghero/data/irwbds/llm/parc/Ministral-14B-GGUF/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
+-rwx------. 1 inghero ubuntu 9.0G Feb 27 09:18 /home/inghero/data/irwbds/llm/parc/Ministral-14B-GGUF/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
+(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/Ministral-14B-GGUF$ cd ~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master
+(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master$ CMAKE_ARGS="-DGGML_CUDA=on" pip install --upgrade --force-reinstall llama-cpp-python --no-cache-dir
+Looking in indexes: https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/simple/
+Collecting llama-cpp-python
+  Downloading https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/packages/packages/e4/b4/c8cd17629ced0b9644a71d399a91145aedef109c0333443bef015e45b704/llama_cpp_python-0.3.16.tar.gz (50.7 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 50.7/50.7 MB 167.2 MB/s  0:00:00
+  Installing build dependencies ... done
+  Getting requirements to build wheel ... done
+  Preparing metadata (pyproject.toml) ... done
+Collecting typing-extensions>=4.5.0 (from llama-cpp-python)
+  Downloading https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/packages/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+Collecting numpy>=1.20.0 (from llama-cpp-python)
+  Downloading https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/packages/packages/b4/63/3de6a34ad7ad6646ac7d2f55ebc6ad439dbbf9c4370017c50cf403fb19b5/numpy-2.2.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (16.8 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.8/16.8 MB 313.7 MB/s  0:00:00
+Collecting diskcache>=5.6.1 (from llama-cpp-python)
+  Downloading https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/packages/packages/3f/27/4570e78fc0bf5ea0ca45eb1de3818a23787af9b390c0b0a0033a1b8236f9/diskcache-5.6.3-py3-none-any.whl (45 kB)
+Collecting jinja2>=2.11.3 (from llama-cpp-python)
+  Downloading https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/packages/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl (134 kB)
+Collecting MarkupSafe>=2.0 (from jinja2>=2.11.3->llama-cpp-python)
+  Downloading https://artifactory.dap.ing.net/artifactory/api/pypi/dap-pypi/packages/packages/af/cd/ce6e848bbf2c32314c9b237839119c5a564a59725b53157c856e90937b7a/markupsafe-3.0.3-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (20 kB)
+Building wheels for collected packages: llama-cpp-python
+  Building wheel for llama-cpp-python (pyproject.toml) ... done
+  Created wheel for llama-cpp-python: filename=llama_cpp_python-0.3.16-cp310-cp310-linux_x86_64.whl size=36225272 sha256=b9b0fba4ea886f606ed547377e375eb234206094c93d7fa83dba68b75181694a
+  Stored in directory: /tmp/pip-ephem-wheel-cache-slyydo_l/wheels/e6/0d/da/cf41fa4ea4eff7a567c677f6b2bc283d2ed7f61ce28b490165
+Successfully built llama-cpp-python
+Installing collected packages: typing-extensions, numpy, MarkupSafe, diskcache, jinja2, llama-cpp-python
+  Attempting uninstall: typing-extensions
+    Found existing installation: typing_extensions 4.15.0
+    Not uninstalling typing-extensions at /layers/paketo-buildpacks_cpython/cpython/lib/python3.10/site-packages, outside environment /layers/dap-buildpacks_pip-install/site-packages/virtual-env
+    Can't uninstall 'typing_extensions'. No files were found to uninstall.
+  Attempting uninstall: numpy
+    Found existing installation: numpy 2.2.6
+    Uninstalling numpy-2.2.6:
+      Successfully uninstalled numpy-2.2.6
+  Attempting uninstall: MarkupSafe
+    Found existing installation: MarkupSafe 3.0.3
+    Not uninstalling markupsafe at /layers/dap-buildpacks_jupyter/jupyter/python/lib/python3.10/site-packages, outside environment /layers/dap-buildpacks_pip-install/site-packages/virtual-env
+    Can't uninstall 'MarkupSafe'. No files were found to uninstall.
+  Attempting uninstall: diskcache
+    Found existing installation: diskcache 5.6.3
+    Uninstalling diskcache-5.6.3:
+      Successfully uninstalled diskcache-5.6.3
+  Attempting uninstall: jinja2
+    Found existing installation: Jinja2 3.1.6
+    Not uninstalling jinja2 at /layers/dap-buildpacks_jupyter/jupyter/python/lib/python3.10/site-packages, outside environment /layers/dap-buildpacks_pip-install/site-packages/virtual-env
+    Can't uninstall 'Jinja2'. No files were found to uninstall.
+  Attempting uninstall: llama-cpp-python
+    Found existing installation: llama_cpp_python 0.3.16
+    Uninstalling llama_cpp_python-0.3.16:
+      Successfully uninstalled llama_cpp_python-0.3.16
+Successfully installed MarkupSafe-3.0.3 diskcache-5.6.3 jinja2-3.1.6 llama-cpp-python-0.3.16 numpy-2.2.6 typing-extensions-4.15.0
+
+[notice] A new release of pip is available: 25.2 -> 26.0.1
+[notice] To update, run: pip install --upgrade pip
+(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master$ python -m src.main   --stage all   --ocr_method easyocr   --retriever embedding   --company "ABP Acquisitions UK Limited_39306327"
+
+    ╔═══════════════════════════════════════════════════════════════╗
+    ║     PROJECT SUNSHINE - Document Extraction Pipeline v2        ║
+    ║     Multi-Pass Evidence-Based Extraction System               ║
+    ╠═══════════════════════════════════════════════════════════════╣
+    ║  Stage 1: Document Preprocessing                              ║
+    ║  Stage 2: Multi-Pass Field Group Extraction                   ║
+    ║  Stage 3: Deep Field Extraction (Fallback)                    ║
+    ║  Stage 4: Verification & Consolidation                        ║
+    ╚═══════════════════════════════════════════════════════════════╝
+    
+14:04:13 - Pipeline - INFO - Checking environment...
+14:04:13 - Pipeline - INFO -   GPU: NVIDIA A100-PCIE-40GB MIG 4g.20gb (21.1 GB)
+14:04:13 - Pipeline - INFO -   GPU Memory: 21.1GB free / 21.1GB total
+14:04:15 - Pipeline - INFO -   All required packages available
+14:04:15 - Pipeline - INFO - Checking paths...
+14:04:15 - Pipeline - INFO -   GGUF model: OK
+14:04:15 - Pipeline - INFO -   VLM model: OK
+14:04:16 - Pipeline - INFO -   Source data: OK
+14:04:16 - Pipeline - INFO - 
 ============================================================
-13:15:54 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION (consolidated per company)
-13:15:54 - Pipeline - INFO - ============================================================
-13:15:56 - Pipeline - INFO - Retriever type: embedding
-13:15:56 - Pipeline - INFO - Loading LLM model...
-13:15:56 - Pipeline - CRITICAL - Pipeline failed: name 'config' is not defined
+14:04:16 - Pipeline - INFO - STAGE 1: DOCUMENT PREPROCESSING
+14:04:16 - Pipeline - INFO - ============================================================
+14:04:42 - Pipeline - INFO - === Company: ABP Acquisitions UK Limited_39306327 ===
+14:04:43 - Pipeline - INFO - Skipping (exists): Transfer Cert - fully executed CS.pdf
+14:04:43 - Pipeline - INFO - Skipping (exists): Cook_-_Fully_executed_SFA.pdf
+14:04:44 - Pipeline - INFO - Skipping (exists): Transfer certificate - fully executed JPM.pdf
+14:04:44 - Pipeline - INFO - Preprocessing complete. 3 files in manifest.
+14:04:44 - Pipeline - INFO - Unloading VLM to free GPU memory...
+14:04:45 - Pipeline - INFO - After VLM unload: GPU Memory: 0.00GB allocated, 0.00GB reserved, 21.07GB free (0.0% used)
+14:04:45 - Pipeline - INFO - Loading tokenizer for consolidation chunking...
+14:04:50 - Pipeline - INFO - Loading embedding model...
+14:04:50 - Pipeline - INFO - Loading embedding model from /home/inghero/data/irwbds/llm/parc/Qwen3-Embedding-0.6B
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 310/310 [00:16<00:00, 19.18it/s, Materializing param=norm.weight]
+14:05:25 - Pipeline - INFO -   Embedding model loaded on cuda
+14:05:25 - Pipeline - INFO - Preembed: ABP Acquisitions UK Limited_39306327
+14:05:25 - Pipeline - INFO - Consolidating 3 files for ABP Acquisitions UK Limited_39306327
+14:05:26 - Pipeline - INFO -   Combined document: 304,718 chars, ~75,754 tokens
+14:05:26 - Pipeline - INFO -   Source files: 3
+14:05:26 - Pipeline - INFO -   Creating chunks: 75754 tokens, size=2000, overlap=400
+14:05:27 - Pipeline - INFO -   Created 48 chunks covering entire document
+14:05:27 - Pipeline - INFO -   ✓ Complete coverage verified: 100.00%
+14:05:32 - Pipeline - INFO -   Saved 48 chunk embeddings to preprocessed_data/consolidated/ABP_Acquisitions_UK_Limited_39306327/_EMBEDDINGS.pt
+14:05:32 - Pipeline - INFO - Preembed stage complete.
+14:05:32 - Pipeline - INFO - 
+============================================================
+14:05:32 - Pipeline - INFO - STAGE 2-4: MULTI-PASS EXTRACTION (consolidated per company)
+14:05:32 - Pipeline - INFO - ============================================================
+14:05:35 - Pipeline - INFO - Retriever type: embedding
+14:05:35 - Pipeline - INFO - Loading LLM model...
+14:05:35 - Pipeline - INFO - LLM backend: llamacpp — loading /home/inghero/data/irwbds/llm/parc/Ministral-14B-GGUF/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
+14:05:35 - Pipeline - INFO - Loading GGUF model: /home/inghero/data/irwbds/llm/parc/Ministral-14B-GGUF/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
+14:05:35 - Pipeline - INFO -   n_gpu_layers=-1, n_ctx=12000, n_batch=2048
+14:05:36 - Pipeline - CRITICAL - Failed to load GGUF model: Failed to load model from file: /home/inghero/data/irwbds/llm/parc/Ministral-14B-GGUF/Ministral-3-14B-Instruct-2512-Q5_K_M.gguf
+Exception ignored in: <function LlamaModel.__del__ at 0x7ef6f2b4c040>
 Traceback (most recent call last):
-  File "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master/src/main.py", line 521, in main
-    success = run_extraction(args)
-  File "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master/src/main.py", line 194, in run_extraction
-    model, tokenizer = initialize_model(MODEL_PATH, args.flash_attention)
-  File "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master/src/extract_v2.py", line 255, in initialize_model
-    if config.LLM_BACKEND == "llamacpp":
-NameError: name 'config' is not defined
-(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master$ python -m src.main   --stage all   --ocr_method easyocr   --retriever embedding   --company "ABP Acquisitions UK Limited_39306327"
-Traceback (most recent call last):
-  File "/layers/paketo-buildpacks_cpython/cpython/lib/python3.10/runpy.py", line 196, in _run_module_as_main
-    return _run_code(code, main_globals, None,
-  File "/layers/paketo-buildpacks_cpython/cpython/lib/python3.10/runpy.py", line 86, in _run_code
-    exec(code, run_globals)
-  File "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master/src/main.py", line 17, in <module>
-    import config
-ModuleNotFoundError: No module named 'config'
-(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master$ python -m src.main   --stage all   --ocr_method easyocr   --retriever embedding   --company "ABP Acquisitions UK Limited_39306327"
-Traceback (most recent call last):
-  File "/layers/paketo-buildpacks_cpython/cpython/lib/python3.10/runpy.py", line 196, in _run_module_as_main
-    return _run_code(code, main_globals, None,
-  File "/layers/paketo-buildpacks_cpython/cpython/lib/python3.10/runpy.py", line 86, in _run_code
-    exec(code, run_globals)
-  File "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master/src/main.py", line 17, in <module>
-    import config
-ModuleNotFoundError: No module named 'config'
-(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master$ python -m src.main   --stage all   --ocr_method easyocr   --retriever embedding   --company "ABP Acquisitions UK Limited_39306327"
-Traceback (most recent call last):
-  File "/layers/paketo-buildpacks_cpython/cpython/lib/python3.10/runpy.py", line 187, in _run_module_as_main
-    mod_name, mod_spec, code = _get_module_details(mod_name, _Error)
-  File "/layers/paketo-buildpacks_cpython/cpython/lib/python3.10/runpy.py", line 110, in _get_module_details
-    __import__(pkg_name)
-  File "/home/inghero/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master/src/__init__.py", line 11
-    import .config
-           ^
-SyntaxError: invalid syntax
-(virtual-env) inghero@dsbox-gv20fi:~/data/irwbds/llm/parc/notebooks/PF_Case/pipline_pf_7/sunshine-master$ 
+  File "/layers/dap-buildpacks_pip-install/site-packages/virtual-env/lib/python3.10/site-packages/llama_cpp/_internals.py", line 86, in __del__
+    self.close()
+  File "/layers/dap-buildpacks_pip-install/site-packages/virtual-env/lib/python3.10/site-packages/llama_cpp/_internals.py", line 78, in close
+    if self.sampler is not None:
+AttributeError: 'LlamaModel' object has no attribute 'sampler'
+14:05:36 - Pipeline - ERROR - Failed to load model
+14:05:36 - Pipeline - ERROR - Extraction failed
